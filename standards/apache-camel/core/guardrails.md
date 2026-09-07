@@ -1,6 +1,6 @@
 ---
 title: Guardrails - Apache Camel
-description: Always-on MUST / MUST NOT rules. Loaded via playbook_get_doc(kind="guardrails") on every task.
+description: Always-on MUST / MUST NOT rules. Loaded via playbook_get(ref="guardrails") on every task.
 tags: [guardrails, security, scope]
 ---
 

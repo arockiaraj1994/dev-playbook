@@ -8,6 +8,44 @@ changes after 1.0.0 will bump the **major**.
 
 ## [Unreleased]
 
+### Changed - BREAKING - v0.8.0 (tool surface → 3, `ref` doc addresses)
+- **Five tools → three.** `playbook_start`, `playbook_get`, `playbook_find`.
+  `playbook_start_task` + `playbook_start_requirement` merge into
+  `playbook_start(mode="code"|"prd"|"story")`; `playbook_search_docs` +
+  `playbook_list_requirements` merge into `playbook_find` (whose `status=` and
+  `prd=` filters were the only capability unique to the latter, and now apply
+  to search results as well as listings).
+- **`playbook_get(ref=…)` replaces `get_doc(kind=, name=, section=, depth=)`.**
+  A `ref` is the string the corpus already uses in `see_also:` / `targets:`
+  frontmatter - `guardrails`, `pattern:repository`, `language:kotlin/testing`,
+  `req:ST-101` - so a rendered Next Call can be followed verbatim. The ~100-line
+  `_format_call` switch that translated between the two vocabularies is gone,
+  and the grammar now lives in one place (`mcp/refs.py`) shared by the tools and
+  `scripts/validate-rules.py`.
+  - `section=` folds into the ref (`language:java/testing`).
+  - `depth=` is **removed**: a story always arrives with its parent PRD summary
+    and a PRD with its story list, which is what `start_task(requirement=)`
+    already did unconditionally while `get_doc` defaulted it off.
+- **The duplication is gone, not just the tool count.** `playbook_start` now
+  composes `get.render_ref()` for its guardrails and requirement blocks instead
+  of re-rendering them; a test asserts the two are byte-identical so they cannot
+  drift again.
+- **Clean break on tool names in frontmatter.** `tool:` entries accept only
+  `playbook_start`, `playbook_get`, `playbook_find`; every pre-0.8.0 alias is
+  rejected by the validator rather than silently rendering nothing. Doc-kind
+  aliases (`gates:`, `requirement:`, `core:`) still resolve. The two standards
+  projects, the requirements project, and `TEMPLATE.md` are migrated.
+- **Metrics history is preserved.** `_LEGACY_TOOL_MAP` folds every historical
+  tool name onto the new three, so the dashboard keeps one row per tool across
+  the rename.
+- **Rule-engine dedupe.** `scripts/validate-rules.py` imports `REQUIRED_FILES` /
+  `REQUIRED_WORKFLOWS` from `quality_rules` instead of redeclaring them, and
+  validates `see_also:` through the same `refs.parse_ref` the server uses.
+- Removed dead code: `metrics.args_to_doc_path` (no production caller, and a
+  third copy of the ref→path mapping), `loader.bootstrap`, and the
+  `allow_omit_for_cross_lookup` branch no caller ever passed.
+- Version bumped to **0.8.0**.
+
 ### Changed - BREAKING - v0.7.0 (tool surface → 5, `playbook_` namespace)
 - **All tools renamed with a `playbook_` prefix** so they cannot collide with
   other MCP servers in a multi-server editor setup: `playbook_start_task`,

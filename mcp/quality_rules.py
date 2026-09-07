@@ -169,7 +169,7 @@ def _rule_has_description(doc: RuleDoc, _ctx: RuleContext) -> RuleResult:
         "universal.frontmatter_description",
         SEVERITY_SOFT,
         isinstance(desc, str) and bool(desc.strip()),
-        "Frontmatter has a `description:` (shown in `playbook_search_docs` and INDEX)",
+        "Frontmatter has a `description:` (shown in `playbook_find` and INDEX)",
     )
 
 
@@ -200,13 +200,19 @@ UNIVERSAL_RULES: tuple[Rule, ...] = (
 
 def _rule_agents_mentions_entry_points(doc: RuleDoc, _ctx: RuleContext) -> RuleResult:
     text = doc.content
-    # Substring match also accepts the pre-0.7.0 `start_task` spelling.
-    has = "start_task" in text or "INDEX.md" in text or "core/guardrails.md" in text
+    # Substring match accepts every historical spelling of the entry point
+    # (`start_task`, `playbook_start_task`, `playbook_start`).
+    has = (
+        "playbook_start" in text
+        or "start_task" in text
+        or "INDEX.md" in text
+        or "core/guardrails.md" in text
+    )
     return _check(
         "agents.mentions_entry_points",
         SEVERITY_HARD,
         has,
-        "Mentions `playbook_start_task`, `INDEX.md`, or `core/guardrails.md` "
+        "Mentions `playbook_start`, `INDEX.md`, or `core/guardrails.md` "
         "(so agents know how to enter)",
     )
 
@@ -692,7 +698,7 @@ def _rule_skill_triggers(doc: RuleDoc, _ctx: RuleContext) -> RuleResult:
         "skill.triggers",
         SEVERITY_SOFT,
         isinstance(triggers, list) and bool(triggers),
-        "Frontmatter `triggers:` is set (otherwise `playbook_start_task` won't surface this skill)",
+        "Frontmatter `triggers:` is set (otherwise `playbook_start` won't surface this skill)",
     )
 
 
@@ -724,7 +730,7 @@ def _rule_workflow_triggers(doc: RuleDoc, _ctx: RuleContext) -> RuleResult:
         "workflow.triggers",
         SEVERITY_HARD,
         isinstance(triggers, list) and bool(triggers),
-        "Frontmatter `triggers:` is set (required for `playbook_start_task` matching)",
+        "Frontmatter `triggers:` is set (required for `playbook_start` matching)",
     )
 
 

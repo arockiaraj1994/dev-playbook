@@ -57,7 +57,7 @@ def tmp_rules_root(tmp_path: Path) -> Path:
         "title: Proj A agents\n"
         "description: Identity and behavior for proj-a.\n"
         "tags: [stack-a, rest]\n"
-        "see_also: [tool:start_task, tool:get_guardrails, workflow:bug-fix]\n"
+        "see_also: [tool:playbook_start, tool:playbook_get, workflow:bug-fix]\n"
         "---\n"
         "# AGENTS.md - Proj A\n\n"
         "## IDENTITY\n\nYou are a senior proj-a engineer who fixes root causes.\n\n"

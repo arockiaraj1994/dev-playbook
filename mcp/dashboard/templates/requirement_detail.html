@@ -21,7 +21,7 @@
 </div>
 
 {% if not prds %}
-<div class="callout">No PRDs for <code>{{ project }}</code>. Use <code>playbook_start_requirement</code> to add one.</div>
+<div class="callout">No PRDs for <code>{{ project }}</code>. Use <code>playbook_start(mode="prd")</code> to add one.</div>
 {% else %}
 
 <div class="card">

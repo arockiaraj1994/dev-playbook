@@ -67,6 +67,52 @@ MCP_HOST=0.0.0.0 MCP_PORT=3000 uv run dev.py
 
 Once started, open the dashboard at **`http://localhost:3000/dashboard/`** - it shows connected editors, call activity, and which rules are being used. Editor connection instructions are in the dashboard under **Setup**.
 
+### With Docker Compose
+
+The usual way to run this for a team - no Python or uv on the host.
+
+```bash
+cp .env.example .env      # set MCP_ADMIN_PASSWORD
+docker compose up -d
+```
+
+| | |
+|---|---|
+| Dashboard | `http://localhost:3001/dashboard/` |
+| MCP (SSE) | `http://localhost:3001/sse` |
+
+**Host port is 3001, not 3000.** The container listens on 3000 internally, but
+3000 is a crowded port on a dev box (Rails apps, Redmine, Grafana); pointing an
+editor at the wrong 3000 shows up as an opaque `404` on `/sse`. Override with
+`MCP_PORT` in `.env`.
+
+`MCP_ADMIN_PASSWORD` is **required**: the container binds `0.0.0.0`, and the
+server refuses to start on the default `admin`/`admin` credentials on a
+non-loopback bind. Compose fails fast if it is unset.
+
+`standards/` and `requirements/` are bind-mounted **read-only**, so rule authors
+edit markdown on the host and the server serves it. Requirements are TTL-reloaded
+(`MCP_REQUIREMENTS_TTL`, default 300s); standards are cached at boot, so restart
+after editing them:
+
+```bash
+docker compose restart          # pick up standards/ edits
+docker compose logs -f          # watch tool calls
+docker compose down             # stop; metrics + tokens survive in the volume
+```
+
+Metrics and auth live in the named volume `playbook-data` (`/data/metrics.db`),
+so `down` does not lose usage history or issued MCP tokens. Use
+`docker compose down -v` to wipe them.
+
+Get an MCP bearer token for an editor:
+
+```bash
+curl -s -X POST http://localhost:3001/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"admin","password":"<your MCP_ADMIN_PASSWORD>"}'
+```
+
 ---
 
 ## Adding a project
@@ -138,7 +184,7 @@ rules belong in `core/guardrails.md`, not here.
 - `languages/<lang>/standards.md` + `testing.md` + `anti-patterns.md` for each language the project actually uses.
 - `patterns/<name>.md` - canonical noun-named patterns ("what good looks like").
 - `skills/<action>.md` - verb-noun playbooks. Add `triggers:` and `see_also:` frontmatter so they show up correctly in `INDEX.md`.
-- `workflows/{new-feature,bug-fix,security-fix,refactor}.md` - task-driven flows. These are the agent's first stop after `playbook_start_task`.
+- `workflows/{new-feature,bug-fix,security-fix,refactor}.md` - task-driven flows. These are the agent's first stop after `playbook_start`.
 - `gates/README.md` + `gates/scripts/verify-<lang>.sh` (executable). The validator fails if a gate script is not executable.
 
 ### Step 5 - Regenerate `INDEX.md` and validate
@@ -182,20 +228,33 @@ and chain forward from there. The contract:
 
 | Tool | When to call |
 |---|---|
-| `playbook_start_task(project, task, requirement?)` | **The entry point - first call for any coding task.** Returns identity + guardrails + optional requirement + matched workflow + `Next Calls`. |
-| `playbook_get_doc(kind, project, name?, section?, depth?)` | Fetch any standards or requirement doc. `kind` is one of `agents`, `guardrails`, `architecture`, `language`, `pattern`, `skill`, `workflow`, `gate`, `requirement`. |
-| `playbook_search_docs(project, query?, doc_type?, corpus?)` | Discovery. Omit `query` to list every doc with its trigger phrases; pass `query` to search. |
-| `playbook_list_requirements(project, …)` | Catalogue PRDs/stories (ids + summaries, never bodies). |
-| `playbook_start_requirement(project, intent, …)` | PM authoring bootstrap (template + context + next id). |
+| `playbook_start(project, intent, mode?, ref?)` | **The entry point - first call, always.** Returns identity + guardrails + optional requirement + matched workflow + `Next Calls`. `mode="prd"` or `"story"` switches to the authoring bootstrap (template + context + next id). |
+| `playbook_get(project, ref)` | Fetch any standards or requirement doc by `ref`. |
+| `playbook_find(project, query?, type?, status?, prd?, corpus?)` | Discovery. Omit `query` to list every doc with its trigger phrases; pass `query` to search. |
 
-`project` is always the basename of the user's workspace directory. All five
+`project` is always the basename of the user's workspace directory. All three
 tools are read-only and annotated as such (`readOnlyHint`), so clients can
 auto-approve them without prompting.
 
+#### `ref` - one string names one doc
+
+A `ref` is exactly the string the corpus already uses in `see_also:` /
+`targets:` frontmatter, so a Next Calls bullet can be followed verbatim:
+
+| ref | fetches |
+|---|---|
+| `agents` | `AGENTS.md` |
+| `guardrails` | `core/guardrails.md` + `core/definition-of-done.md` |
+| `architecture`, `architecture:<adr>` | overview, or one ADR |
+| `language:<lang>`, `language:<lang>/testing` | `languages/<lang>/<section>.md` (`standards` by default) |
+| `pattern:<name>`, `skill:<name>`, `workflow:<name>` | that doc |
+| `gate`, `gate:<script>` | the gate README, or one script (shown, never executed) |
+| `req:<id>` | a PRD (with its story list) or a story (with its parent PRD summary) |
+
 Every doc response ends with a `## Next Calls` block generated from that
-doc's `see_also:` / `targets:` frontmatter, naming the exact `playbook_get_doc(...)`
+doc's `see_also:` / `targets:` frontmatter, naming the exact `playbook_get(...)`
 follow-up calls to make. A doc with no `see_also:` is a dead end for the
-agent - which is why `AGENTS.md` declares `tool:playbook_start_task`.
+agent - which is why `AGENTS.md` declares `tool:playbook_start`.
 
 ### Sample prompts
 
@@ -206,7 +265,7 @@ We have a CVE on Quarkus in apache-camel - patch it.
 Refactor the invoice processor without changing behavior.
 ```
 
-The agent will call `playbook_start_task` first, then chain through the next calls
+The agent will call `playbook_start` first, then chain through the next calls
 the bundle returns.
 
 ---

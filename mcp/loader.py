@@ -48,7 +48,6 @@ __all__ = [
     "_infer_doc_type",
     "_is_excluded",
     "load_store",
-    "bootstrap",
     "bootstrap_all",
 ]
 
@@ -90,24 +89,17 @@ SEE_ALSO_KINDS = (
     "architecture",
     "core",
     "agents",
-    "requirement",
+    "req",
+    "requirement",  # tolerated alias of `req`
 )
 
+# The v0.8.0 tool surface. Earlier names are NOT accepted in frontmatter -
+# v0.8.0 is a clean break, and scripts/validate-rules.py fails a corpus that
+# still names a removed tool rather than silently rendering nothing.
 SEE_ALSO_TOOLS = (
-    # Current (0.7.0+) playbook_-namespaced tool names.
-    "playbook_start_task",
-    "playbook_get_doc",
-    "playbook_search_docs",
-    "playbook_list_requirements",
-    "playbook_start_requirement",
-    # Pre-0.7.0 aliases still accepted in frontmatter; render as the new names.
-    "start_task",
-    "get_guardrails",
-    "get_doc",
-    "find_rules",
-    "list_requirements",
-    "get_requirement",
-    "start_requirement",
+    "playbook_start",
+    "playbook_get",
+    "playbook_find",
 )
 
 SEE_ALSO_CORE = ("guardrails", "definition-of-done")
@@ -515,12 +507,6 @@ def load_store(repo_root: Path, *, corpus: str = "standards") -> DocStore:
     docs = parse_corpus(spec)
     logger.info("Loaded %d %s docs from %s.", len(docs), corpus, repo_root)
     return DocStore(docs=docs)
-
-
-def bootstrap() -> DocStore:
-    """Load standards corpus only (back-compat for callers expecting one store)."""
-    root = resolve_standards_root()
-    return load_store(root, corpus="standards")
 
 
 def bootstrap_all() -> DocStore:

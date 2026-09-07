@@ -121,9 +121,9 @@ async def test_tools_page_shows_call_counts(app_with_data) -> None:
     r = _client(app).get("/dashboard/tools", headers={"X-MCP-User": "v"})
     assert r.status_code == 200
     body = r.text
-    # Aggregates fold legacy names onto the canonical playbook_* names.
-    assert "playbook_search_docs" in body
-    assert "playbook_get_doc" in body
+    # Aggregates fold historical names onto the current playbook_* names.
+    assert "playbook_find" in body
+    assert "playbook_get" in body
     assert "patterns/foo.md" in body  # doc fetches table
 
 

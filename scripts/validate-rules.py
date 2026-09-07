@@ -47,7 +47,6 @@ from corpus import (  # noqa: E402
     standards_spec,
 )
 from loader import (  # noqa: E402
-    SEE_ALSO_CORE,
     SEE_ALSO_KINDS,
     SEE_ALSO_TOOLS,
     RuleDoc,
@@ -55,18 +54,12 @@ from loader import (  # noqa: E402
     parse_corpus,
 )
 from index_render import render_index  # noqa: E402
+# The corpus expectations live with the rule library, not here - one definition
+# behind both this CI gate and the dashboard's quality pages.
+from quality_rules import REQUIRED_FILES, REQUIRED_WORKFLOWS  # noqa: E402
+from refs import RefError, parse_ref  # noqa: E402
 
 LINK_RE = re.compile(r"\[([^\]]+)\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
-
-REQUIRED_FILES = (
-    "AGENTS.md",
-    "core/guardrails.md",
-    "core/definition-of-done.md",
-    "core/glossary.md",
-    "architecture/overview.md",
-    "gates/README.md",
-)
-REQUIRED_WORKFLOWS = ("new-feature", "bug-fix", "security-fix", "refactor")
 
 REQUIRED_REQ_WORKFLOWS = ("write-prd", "write-story")
 
@@ -229,7 +222,12 @@ def _check_no_other_doc_types(docs: list[RuleDoc]) -> list[_Error]:
 
 
 def _check_see_also_kinds(docs: list[RuleDoc]) -> list[_Error]:
-    """Reject `see_also` / `targets` entries the server cannot render."""
+    """Reject `see_also` / `targets` entries the server cannot render.
+
+    Entries are validated with tools/refs.py - the same parser playbook_get
+    uses - so a doc that passes here is guaranteed to render a live Next Call
+    rather than silently dropping the bullet.
+    """
     errors: list[_Error] = []
     for d in docs:
         for key in ("see_also", "targets"):
@@ -238,11 +236,7 @@ def _check_see_also_kinds(docs: list[RuleDoc]) -> list[_Error]:
                 continue
             if not isinstance(raw, list):
                 errors.append(
-                    (
-                        d.project,
-                        key,
-                        f"{d.project}/{d.relative_path}: {key} must be a list",
-                    )
+                    (d.project, key, f"{d.project}/{d.relative_path}: {key} must be a list")
                 )
                 continue
             for entry in raw:
@@ -252,33 +246,25 @@ def _check_see_also_kinds(docs: list[RuleDoc]) -> list[_Error]:
                     continue
                 kind, _, name = entry.partition(":")
                 kind, name = kind.strip(), name.strip()
-                if kind not in SEE_ALSO_KINDS:
-                    errors.append(
-                        (
-                            d.project,
-                            key,
-                            f"{where} has unknown kind '{kind}' "
-                            f"(expected one of {', '.join(SEE_ALSO_KINDS)})",
-                        )
-                    )
-                elif kind == "tool" and name not in SEE_ALSO_TOOLS:
-                    errors.append(
-                        (
-                            d.project,
-                            key,
+                if kind == "tool":
+                    if name not in SEE_ALSO_TOOLS:
+                        errors.append((
+                            d.project, key,
                             f"{where} names unknown tool '{name}' "
                             f"(expected one of {', '.join(SEE_ALSO_TOOLS)})",
-                        )
-                    )
-                elif kind == "core" and name not in SEE_ALSO_CORE:
-                    errors.append(
-                        (
-                            d.project,
-                            key,
-                            f"{where} names unknown core doc '{name}' "
-                            f"(expected one of {', '.join(SEE_ALSO_CORE)})",
-                        )
-                    )
+                        ))
+                    continue
+                if kind not in SEE_ALSO_KINDS:
+                    errors.append((
+                        d.project, key,
+                        f"{where} has unknown kind '{kind}' "
+                        f"(expected one of {', '.join(SEE_ALSO_KINDS)})",
+                    ))
+                    continue
+                try:
+                    parse_ref(entry)
+                except RefError as exc:
+                    errors.append((d.project, key, f"{where} is not a valid ref: {exc}"))
     return errors
 
 

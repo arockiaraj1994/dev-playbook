@@ -5,20 +5,20 @@ under `standards/<project>/`. See [`CONTRIBUTING.md`](CONTRIBUTING.md) for
 naming, the pattern-vs-skill rule, and the H1 convention.
 
 For PRDs and stories, use `mcp/templates/PRD.md` and `mcp/templates/STORY.md`
-(or call `playbook_start_requirement`) and place them under `requirements/<project>/`.
+(or call `playbook_start(mode="prd")`) and place them under `requirements/<project>/`.
 
 The YAML frontmatter block is optional except where noted (workflows and
-skills should set `triggers:` and `see_also:` so `playbook_start_task` and
+skills should set `triggers:` and `see_also:` so `playbook_start` and
 `INDEX.md` work).
 
 Two conventions in `AGENTS.md` are load-bearing, not decorative:
 
-- **`see_also: [tool:playbook_start_task, …]`** - without it the doc renders no
+- **`see_also: [tool:playbook_start, …]`** - without it the doc renders no
   `## Next Calls` block, so an agent that opens `AGENTS.md` first has nowhere
   to chain to and simply stops. This is the single most common authoring
   mistake.
-- **A `## IDENTITY` H2** - `playbook_start_task` lifts exactly this section into its
-  bundle. Anything outside it is only reachable via `playbook_get_doc(kind="agents")`.
+- **A `## IDENTITY` H2** - `playbook_start` lifts exactly this section into its
+  bundle. Anything outside it is only reachable via `playbook_get(ref="agents")`.
 
 ---
 
@@ -29,7 +29,7 @@ Two conventions in `AGENTS.md` are load-bearing, not decorative:
 title: AGENTS.md - <Project>
 description: Identity and behavior for AI agents working on <project>.
 tags: [<stack>, <lang>]
-see_also: [tool:playbook_start_task, tool:playbook_get_doc, workflow:new-feature, workflow:bug-fix]
+see_also: [tool:playbook_start, tool:playbook_get, workflow:new-feature, workflow:bug-fix]
 ---
 
 # AGENTS.md - <Project> (<short stack>)
@@ -65,7 +65,7 @@ You fix root causes, not symptoms.
 | `./workflows/` | Task-driven flows |
 | `./gates/` | Verification scripts |
 
-**Call `playbook_start_task` first.** It returns guardrails + the matched workflow + next-call hints.
+**Call `playbook_start` first.** It returns guardrails + the matched workflow + next-call hints.
 ```
 
 ---

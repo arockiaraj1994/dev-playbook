@@ -1,14 +1,15 @@
 """
 server.py - Dev Playbook MCP Server (SSE only; read-only rules + usage metrics).
 
-Tools (5, all read-only, playbook_ namespaced):
- - playbook_start_task - THE entry point: identity + guardrails + workflow +
-                           next_calls (+ optional requirement= for PRD/story tree walk)
- - playbook_search_docs - list docs (no query) or search (with query); corpus= filter
- - playbook_get_doc - unified fetch by kind= (agents|guardrails|architecture|language|
-                           pattern|skill|workflow|gate|requirement)
- - playbook_list_requirements - catalogue PRDs/stories
- - playbook_start_requirement - PM authoring bootstrap
+Tools (3, all read-only, playbook_ namespaced):
+ - playbook_start - THE entry point. mode=code (default): identity + guardrails +
+                    matched workflow + next calls (+ optional ref="req:ST-101").
+                    mode=prd|story: the authoring bootstrap.
+ - playbook_get   - fetch one doc by ref= ("guardrails", "pattern:repository",
+                    "language:kotlin/testing", "workflow:bug-fix", "req:ST-101") -
+                    the same grammar the corpus uses in see_also:/targets:.
+ - playbook_find  - list docs (no query) or search (with query);
+                    type=/status=/prd=/corpus= filters.
 
 Run:
   uv run server.py
@@ -85,10 +86,9 @@ from metrics import MetricsStore, summarize_args
 from search import RulesSearchEngine
 from session import DashboardSession
 from tools import READ_ONLY
-from tools import docs as _docs_mod
-from tools import requirements as _requirements_mod
-from tools import search_tool as _search_mod
-from tools import start_task as _start_task_mod
+from tools import find as _find_mod
+from tools import get as _get_mod
+from tools import start as _start_mod
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -102,7 +102,7 @@ logging.basicConfig(
 logger = logging.getLogger("dev-playbook")
 
 SERVER_LABEL = os.getenv("MCP_SERVER_LABEL", "dev-playbook")
-SERVER_VERSION = "0.7.0"
+SERVER_VERSION = "0.8.0"
 DEFAULT_PORT = 3000
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_INACTIVE_DAYS = 2
@@ -171,10 +171,9 @@ metrics_store: MetricsStore | None = None
 server = Server(SERVER_LABEL)
 
 _TOOL_MODULES = [
-    _start_task_mod,
-    _docs_mod,
-    _search_mod,
-    _requirements_mod,
+    _start_mod,
+    _get_mod,
+    _find_mod,
 ]
 
 
@@ -360,11 +359,13 @@ def load_mcp_config() -> McpConfig:
 
 SERVER_INSTRUCTIONS = (
     "Development-standards playbook server. For any coding task, call "
-    "playbook_start_task first - it returns guardrails, the matched workflow, "
-    "and exact next calls. For authoring PRDs/stories, start with "
-    "playbook_start_requirement. Fetch specific docs with playbook_get_doc; "
-    "discover them with playbook_search_docs. Always pass the basename of the "
-    "user's workspace directory as `project`."
+    "playbook_start first - it returns guardrails, the matched workflow, and "
+    'exact next calls. To author a PRD or story, call it with mode="prd" or '
+    'mode="story". Fetch specific docs with playbook_get(ref=...), where a '
+    "ref is the same string the corpus uses in see_also: frontmatter "
+    '("guardrails", "pattern:repository", "req:ST-101"); discover them '
+    "with playbook_find. Always pass the basename of the user's workspace "
+    "directory as `project`."
 )
 
 
@@ -424,11 +425,11 @@ def _inject_cookie_send(send: Send, cookie_header: tuple[bytes, bytes]) -> Send:
 
 class AppAuthMiddleware:
     """
-    Path-aware authentication middleware.
+       Path-aware authentication middleware.
 
- - MCP paths use Bearer token auth (identity.py).
- - Dashboard paths use HttpOnly cookie session auth (session.py).
- - Public paths pass through without any credential check.
+    - MCP paths use Bearer token auth (identity.py).
+    - Dashboard paths use HttpOnly cookie session auth (session.py).
+    - Public paths pass through without any credential check.
     """
 
     def __init__(

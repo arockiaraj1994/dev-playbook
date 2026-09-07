@@ -25,4 +25,4 @@ Use this when the user wants a NEW integration flow added to the project.
 ## Done
 
 - All boxes in `core/definition-of-done.md` are checked.
-- `playbook_start_task` for "fix a bug in this route" would naturally pick up the new file.
+- `playbook_start` for "fix a bug in this route" would naturally pick up the new file.

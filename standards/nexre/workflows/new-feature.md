@@ -10,7 +10,7 @@ see_also: [skill:add-screen, skill:add-usecase, skill:add-room-column, pattern:r
 
 ## Before you start
 
-1. Call `playbook_get_doc(project="nexre", kind="guardrails")` - re-read the always-on rules.
+1. Call `playbook_get(project="nexre", ref="guardrails")` - re-read the always-on rules.
 2. Read the relevant existing code before touching anything.
 3. If the feature touches Room schema, read `skills/add-room-column.md` first.
 4. If requirements are ambiguous, ask before coding.

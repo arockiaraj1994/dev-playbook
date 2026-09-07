@@ -17,6 +17,6 @@ Project rules, patterns, and workflows for Apache Camel integration projects
 
 ## For AI agents
 
-Call `playbook_start_task(project="apache-camel", task="<what the user asked for>")`
+Call `playbook_start(project="apache-camel", intent="<what the user asked for>")`
 first. The bundle returns guardrails + the matched workflow + the next
 tool calls to make.

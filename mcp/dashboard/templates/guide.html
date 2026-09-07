@@ -30,22 +30,20 @@
     <!-- MCP tool surface -->
     <section class="doc-section" id="tools-overview">
       <h2>MCP tools at a glance</h2>
-      <p class="lede">Five read-only tools, all <code>playbook_</code>-namespaced. <code>playbook_start_task</code> is the only coding entry point - it returns identity + guardrails + optional requirement + matched workflow + a single <code>## Next Calls</code> block of ready-to-paste <code>playbook_get_doc(…)</code> calls.</p>
+      <p class="lede">Three read-only tools, all <code>playbook_</code>-namespaced. <code>playbook_start</code> is the only entry point - it returns identity + guardrails + optional requirement + matched workflow + a single <code>## Next Calls</code> block of ready-to-paste <code>playbook_get(…)</code> calls.</p>
       <div class="table-wrap">
         <table class="table">
           <thead>
             <tr><th>Tool</th><th>When the agent should call it</th></tr>
           </thead>
           <tbody>
-            <tr><td><code>playbook_start_task(project, task, requirement?)</code></td><td><strong>First call for any coding task.</strong> Free-form sentence in; identity + guardrails + matched workflow out. Pass <code>requirement=ST-101</code> (or a PRD id) for a server-side tree walk.</td></tr>
-            <tr><td><code>playbook_get_doc(kind, project, name?, section?, depth?)</code></td><td>Fetch any standards or requirement doc. <code>kind</code>: <code>agents</code>, <code>guardrails</code>, <code>architecture</code>, <code>language</code>, <code>pattern</code>, <code>skill</code>, <code>workflow</code>, <code>gate</code>, <code>requirement</code>. Corpus is implied by kind.</td></tr>
-            <tr><td><code>playbook_search_docs(project, query?, doc_type?, corpus?)</code></td><td>Discovery. Omit <code>query</code> to list docs + triggers; pass <code>query</code> to search. <code>corpus</code>: <code>standards</code> (default), <code>requirements</code>, or <code>all</code>.</td></tr>
-            <tr><td><code>playbook_list_requirements(project, …)</code></td><td>Catalogue PRDs/stories (ids + summaries, never bodies).</td></tr>
-            <tr><td><code>playbook_start_requirement(project, intent, …)</code></td><td>PM authoring bootstrap - template + glossary + guardrails + next id + suggested <code>targets:</code>. Not for coding (use <code>playbook_start_task</code>).</td></tr>
+            <tr><td><code>playbook_start(project, intent, mode?, ref?)</code></td><td><strong>First call, always.</strong> Free-form sentence in; identity + guardrails + matched workflow out. Pass <code>ref="req:ST-101"</code> (or a PRD id) for a server-side tree walk. <code>mode="prd"</code> or <code>"story"</code> switches to the authoring bootstrap - template + glossary + guardrails + next id + suggested <code>targets:</code>.</td></tr>
+            <tr><td><code>playbook_get(project, ref)</code></td><td>Fetch any standards or requirement doc. <code>ref</code> is the same string the corpus uses in <code>see_also:</code> - <code>guardrails</code>, <code>pattern:repository</code>, <code>language:kotlin/testing</code>, <code>req:ST-101</code> - so a Next Calls bullet can be followed verbatim.</td></tr>
+            <tr><td><code>playbook_find(project, query?, type?, status?, prd?, corpus?)</code></td><td>Discovery. Omit <code>query</code> to list docs + triggers; pass <code>query</code> to search. <code>corpus</code>: <code>standards</code> (default), <code>requirements</code>, or <code>all</code>. <code>status=</code> / <code>prd=</code> filter PRDs and stories.</td></tr>
           </tbody>
         </table>
       </div>
-      <p style="font-size:.8125rem;color:var(--text-muted)">Every doc response that declares <code>see_also:</code> or <code>targets:</code> ends with <code>## Next Calls</code> rendered as <code>playbook_get_doc(kind=…)</code> - that is how agents chain without guessing paths. <code>project</code> is always required: the basename of the user's workspace directory.</p>
+      <p style="font-size:.8125rem;color:var(--text-muted)">Every doc response that declares <code>see_also:</code> or <code>targets:</code> ends with <code>## Next Calls</code> rendered as <code>playbook_get(ref=…)</code> - that is how agents chain without guessing paths. <code>project</code> is always required: the basename of the user's workspace directory.</p>
     </section>
 
     <!-- Corpus layout -->
@@ -95,14 +93,14 @@
       </div>
 
       <h3 style="font-size:1rem;margin:20px 0 8px">Requirements - <code>requirements/&lt;project&gt;/</code></h3>
-      <p>Same project slug as standards (e.g. <code>nexre</code>). Stories live under their PRD folder - path is the parent link, no <code>parent:</code> field needed. Author via <code>playbook_start_requirement</code> or copy <code>mcp/templates/PRD.md</code> / <code>STORY.md</code>.</p>
+      <p>Same project slug as standards (e.g. <code>nexre</code>). Stories live under their PRD folder - path is the parent link, no <code>parent:</code> field needed. Author via <code>playbook_start</code> or copy <code>mcp/templates/PRD.md</code> / <code>STORY.md</code>.</p>
       <div class="code-wrap">
         <pre class="code-block">requirements/&lt;your-project&gt;/
 ├── AGENTS.md                          ← short PM-facing identity (optional but useful)
 ├── INDEX.md                           ← auto-generated
 ├── workflows/
-│   ├── write-prd.md                   ← matched by playbook_start_requirement(type=prd)
-│   └── write-story.md                 ← matched by playbook_start_requirement(type=story)
+│   ├── write-prd.md                   ← matched by playbook_start(mode="prd")
+│   └── write-story.md                 ← matched by playbook_start(mode="story")
 └── PRD-001-&lt;slug&gt;/
     ├── prd.md                         ← id: PRD-001 in frontmatter
     └── stories/
@@ -119,7 +117,7 @@
     <!-- Doc-type cheat sheet -->
     <section class="doc-section" id="doc-types">
       <h2>Doc-type cheat sheet</h2>
-      <p class="lede">On-disk path → <code>doc_type</code> (loader / <code>playbook_search_docs</code> filters) → <code>playbook_get_doc(kind=…)</code>.</p>
+      <p class="lede">On-disk path → <code>doc_type</code> (loader / <code>playbook_find</code> filters) → <code>playbook_get(ref=…)</code>.</p>
       <div class="table-wrap">
         <table class="table">
           <thead>
@@ -127,22 +125,22 @@
           </thead>
           <tbody>
             <tr><td colspan="3" style="font-size:.75rem;color:var(--text-muted);background:var(--surface-2,transparent)">standards/&lt;project&gt;/</td></tr>
-            <tr><td><code>AGENTS.md</code></td><td><code>agents</code></td><td><code>playbook_get_doc(kind="agents")</code></td></tr>
-            <tr><td><code>INDEX.md</code></td><td><code>index</code></td><td><code>playbook_search_docs</code> (triggers listed inline)</td></tr>
-            <tr><td><code>core/guardrails.md</code></td><td><code>guardrails</code></td><td rowspan="2"><code>playbook_get_doc(kind="guardrails")</code></td></tr>
+            <tr><td><code>AGENTS.md</code></td><td><code>agents</code></td><td><code>playbook_get(ref="agents")</code></td></tr>
+            <tr><td><code>INDEX.md</code></td><td><code>index</code></td><td><code>playbook_find</code> (triggers listed inline)</td></tr>
+            <tr><td><code>core/guardrails.md</code></td><td><code>guardrails</code></td><td rowspan="2"><code>playbook_get(ref="guardrails")</code></td></tr>
             <tr><td><code>core/definition-of-done.md</code></td><td><code>definition-of-done</code></td></tr>
-            <tr><td><code>core/glossary.md</code></td><td><code>glossary</code></td><td><code>playbook_search_docs</code></td></tr>
-            <tr><td><code>architecture/overview.md</code></td><td><code>architecture</code></td><td rowspan="2"><code>playbook_get_doc(kind="architecture", name?)</code></td></tr>
+            <tr><td><code>core/glossary.md</code></td><td><code>glossary</code></td><td><code>playbook_find</code></td></tr>
+            <tr><td><code>architecture/overview.md</code></td><td><code>architecture</code></td><td rowspan="2"><code>playbook_get(ref="architecture[:adr]")</code></td></tr>
             <tr><td><code>architecture/decisions/&lt;n&gt;.md</code></td><td><code>architecture-decision</code></td></tr>
-            <tr><td><code>languages/&lt;lang&gt;/&lt;doc&gt;.md</code></td><td><code>language-rules</code></td><td><code>playbook_get_doc(kind="language", name=&lt;lang&gt;, section?)</code></td></tr>
-            <tr><td><code>patterns/&lt;name&gt;.md</code></td><td><code>pattern</code></td><td><code>playbook_get_doc(kind="pattern", name=…)</code></td></tr>
-            <tr><td><code>skills/&lt;name&gt;.md</code></td><td><code>skill</code></td><td><code>playbook_get_doc(kind="skill", name=…)</code></td></tr>
-            <tr><td><code>workflows/&lt;name&gt;.md</code></td><td><code>workflow</code></td><td><code>playbook_get_doc(kind="workflow", name=…)</code></td></tr>
-            <tr><td><code>gates/README.md</code> (+ scripts)</td><td><code>gate</code></td><td><code>playbook_get_doc(kind="gate", name?)</code></td></tr>
+            <tr><td><code>languages/&lt;lang&gt;/&lt;doc&gt;.md</code></td><td><code>language-rules</code></td><td><code>playbook_get(ref="language:&lt;lang&gt;[/section]")</code></td></tr>
+            <tr><td><code>patterns/&lt;name&gt;.md</code></td><td><code>pattern</code></td><td><code>playbook_get(kind="pattern", name=…)</code></td></tr>
+            <tr><td><code>skills/&lt;name&gt;.md</code></td><td><code>skill</code></td><td><code>playbook_get(kind="skill", name=…)</code></td></tr>
+            <tr><td><code>workflows/&lt;name&gt;.md</code></td><td><code>workflow</code></td><td><code>playbook_get(kind="workflow", name=…)</code></td></tr>
+            <tr><td><code>gates/README.md</code> (+ scripts)</td><td><code>gate</code></td><td><code>playbook_get(kind="gate", name?)</code></td></tr>
             <tr><td colspan="3" style="font-size:.75rem;color:var(--text-muted);background:var(--surface-2,transparent)">requirements/&lt;project&gt;/</td></tr>
-            <tr><td><code>PRD-*/prd.md</code></td><td><code>prd</code></td><td><code>playbook_get_doc(kind="requirement", name="PRD-001", depth?)</code></td></tr>
-            <tr><td><code>PRD-*/stories/ST-*.md</code></td><td><code>story</code></td><td><code>playbook_get_doc(kind="requirement", name="ST-101", depth?)</code></td></tr>
-            <tr><td><code>workflows/write-*.md</code></td><td><code>workflow</code></td><td>bundled by <code>playbook_start_requirement</code></td></tr>
+            <tr><td><code>PRD-*/prd.md</code></td><td><code>prd</code></td><td><code>playbook_get(kind="requirement", name="PRD-001", depth?)</code></td></tr>
+            <tr><td><code>PRD-*/stories/ST-*.md</code></td><td><code>story</code></td><td><code>playbook_get(kind="requirement", name="ST-101", depth?)</code></td></tr>
+            <tr><td><code>workflows/write-*.md</code></td><td><code>workflow</code></td><td>bundled by <code>playbook_start</code></td></tr>
           </tbody>
         </table>
       </div>
@@ -153,9 +151,9 @@
       <h2>Frontmatter that wires the agent</h2>
       <p>The loader reads optional YAML frontmatter. Load-bearing fields:</p>
       <ul style="font-size:.875rem;margin:0 0 12px 1.1rem;color:var(--text-muted)">
-        <li><code>triggers:</code> - phrases <code>playbook_start_task</code> matches against the user's task (workflows / skills).</li>
-        <li><code>see_also:</code> - standards chain. Entries <code>&lt;kind&gt;:&lt;name&gt;</code> become <code>playbook_get_doc(…)</code> in <code>## Next Calls</code>.</li>
-        <li><code>targets:</code> - stories only. Same vocabulary as <code>see_also</code>; the WHAT→HOW bridge into standards (merged into <code>playbook_start_task</code>'s Next Calls when <code>requirement=</code> is set).</li>
+        <li><code>triggers:</code> - phrases <code>playbook_start</code> matches against the user's task (workflows / skills).</li>
+        <li><code>see_also:</code> - standards chain. Entries <code>&lt;kind&gt;:&lt;name&gt;</code> become <code>playbook_get(…)</code> in <code>## Next Calls</code>.</li>
+        <li><code>targets:</code> - stories only. Same vocabulary as <code>see_also</code>; the WHAT→HOW bridge into standards (merged into <code>playbook_start</code>'s Next Calls when <code>requirement=</code> is set).</li>
         <li><code>id:</code> / <code>status:</code> / <code>priority:</code> - requirements. Status is <code>draft</code> | <code>approved</code> | <code>shipped</code> (drafts soft-fail validation; approved/shipped hard-fail).</li>
         <li><code>gates:</code> - on workflows, names the <code>verify-*.sh</code> script(s) that close the task.</li>
       </ul>
@@ -177,7 +175,7 @@ see_also: [skill:debug-route, pattern:error-handling, language:java/testing, cor
       </div>
       <p style="font-size:.8125rem;color:var(--text-muted);margin-top:8px">
         Valid kinds: <code>tool</code>, <code>pattern</code>, <code>skill</code>, <code>workflow</code>, <code>gate</code>, <code>language</code>, <code>architecture</code>, <code>core</code>, <code>agents</code>, <code>requirement</code>.
-        Valid <code>tool:</code> names: <code>playbook_start_task</code>, <code>playbook_get_doc</code>, <code>playbook_search_docs</code>, <code>playbook_list_requirements</code>, <code>playbook_start_requirement</code> (pre-0.7.0 names like <code>start_task</code> still render).
+        Valid <code>tool:</code> names: <code>playbook_start</code>, <code>playbook_get</code>, <code>playbook_find</code>, <code>playbook_find</code>, <code>playbook_start</code> (pre-0.7.0 names like <code>start_task</code> still render).
         Unrecognized entries are a <strong>validation error</strong> - they would otherwise render as nothing and silently break the chain.
       </p>
     </section>

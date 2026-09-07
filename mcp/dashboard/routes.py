@@ -393,9 +393,7 @@ def build_dashboard_routes(
         if rules_store is None:
             return HTMLResponse("<p>Rules store unavailable.</p>", status_code=503)
         known = (
-            rules_store.projects(corpus="requirements")
-            if hasattr(rules_store, "projects")
-            else []
+            rules_store.projects(corpus="requirements") if hasattr(rules_store, "projects") else []
         )
         if name not in known:
             return HTMLResponse(

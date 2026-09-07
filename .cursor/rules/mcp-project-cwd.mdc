@@ -5,7 +5,7 @@ alwaysApply: true
 
 # MCP `project` = current directory
 
-When calling **dev-playbook** MCP tools (`playbook_start_task`, `playbook_get_doc`, `playbook_search_docs`, `playbook_list_requirements`, `playbook_start_requirement`):
+When calling **dev-playbook** MCP tools (`playbook_start`, `playbook_get`, `playbook_find`, `playbook_find`, `playbook_start`):
 
 1. **`project` MUST be the basename of the current workspace / working directory.**
    - Workspace `/home/.../NexRe` → `project="NexRe"` (or `nexre`; server matches case-insensitively).

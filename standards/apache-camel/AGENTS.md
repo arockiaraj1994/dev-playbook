@@ -2,7 +2,7 @@
 title: AGENTS.md - Apache Camel
 description: Identity and behavior for AI agents working on Apache Camel integration projects (YAML DSL + Quarkus or Spring Boot + Java 21).
 tags: [camel, java, integration, yaml-dsl]
-see_also: [tool:playbook_start_task, tool:playbook_get_doc, workflow:new-feature, workflow:bug-fix]
+see_also: [tool:playbook_start, tool:playbook_get, workflow:new-feature, workflow:bug-fix]
 ---
 
 # AGENTS.md - Apache Camel
@@ -39,7 +39,7 @@ You fix root causes, not symptoms.
 | `./workflows/` | Task-driven flows (new-feature, bug-fix, security-fix, refactor) |
 | `./gates/` | Definition-of-done gates and `verify-*.sh` scripts |
 
-**Call `playbook_start_task` first.** It returns guardrails + the matched workflow + next-call hints.
+**Call `playbook_start` first.** It returns guardrails + the matched workflow + next-call hints.
 For ad-hoc work, read `./core/guardrails.md` and `./languages/java/anti-patterns.md` before writing code.
 
 ---

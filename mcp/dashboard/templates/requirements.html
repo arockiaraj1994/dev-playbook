@@ -29,7 +29,7 @@
 {% elif not projects %}
 <div class="callout">
   <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;margin-top:1px"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
-  <div>No requirements projects yet. Use <code>playbook_start_requirement</code> to bootstrap a PRD under <code>requirements/&lt;project&gt;/</code>.</div>
+  <div>No requirements projects yet. Use <code>playbook_start(mode="prd")</code> to bootstrap a PRD under <code>requirements/&lt;project&gt;/</code>.</div>
 </div>
 {% else %}
 
@@ -53,7 +53,7 @@
   <div class="kpi">
     <div class="kpi-label">Requirement-linked tasks</div>
     <div class="kpi-value">{{ requirement_linked_pct }}<span class="kpi-unit">%</span></div>
-    <div class="kpi-foot">playbook_start_task calls with requirement= (30d)</div>
+    <div class="kpi-foot">playbook_start calls with ref=req: (30d)</div>
   </div>
   <div class="kpi">
     <div class="kpi-label">Need attention</div>
