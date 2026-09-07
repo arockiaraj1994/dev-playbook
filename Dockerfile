@@ -33,6 +33,7 @@ COPY --from=build /opt/venv /opt/venv
 
 WORKDIR /app
 COPY mcp/ /app/mcp/
+COPY standards/ /app/standards/
 
 RUN mkdir -p /data && chown -R playbook:playbook /data /app
 USER playbook
