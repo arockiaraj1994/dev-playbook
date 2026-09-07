@@ -86,9 +86,19 @@ docker compose up -d
 editor at the wrong 3000 shows up as an opaque `404` on `/sse`. Override with
 `MCP_PORT` in `.env`.
 
-`MCP_ADMIN_PASSWORD` is **required**: the container binds `0.0.0.0`, and the
-server refuses to start on the default `admin`/`admin` credentials on a
-non-loopback bind. Compose fails fast if it is unset.
+`MCP_ADMIN_PASSWORD` is **required**: the server refuses to start on the
+literal `admin`/`admin` pair when binding a non-loopback address (which the
+container always does internally). Compose fails fast if it is unset.
+
+The port is published to **`127.0.0.1` only**, so the dashboard is reachable
+from this machine and not from the LAN. That is what makes a simple password
+tolerable. If you publish on `0.0.0.0` to share the server with a team, use a
+strong `MCP_ADMIN_PASSWORD`:
+
+```yaml
+ports:
+  - "0.0.0.0:${MCP_PORT:-3001}:3000"   # then a weak password is not OK
+```
 
 `standards/` and `requirements/` are bind-mounted **read-only**, so rule authors
 edit markdown on the host and the server serves it. Requirements are TTL-reloaded

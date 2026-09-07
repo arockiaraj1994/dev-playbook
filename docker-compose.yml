@@ -23,7 +23,10 @@ services:
     restart: unless-stopped
 
     ports:
-      - "${MCP_PORT:-3001}:3000"
+      # Loopback only: the dashboard password is weak by choice, so the
+      # port must not be reachable from the LAN. Use "0.0.0.0:${MCP_PORT}:3000"
+      # only alongside a strong MCP_ADMIN_PASSWORD.
+      - "127.0.0.1:${MCP_PORT:-3001}:3000"
 
     environment:
       MCP_HOST: "0.0.0.0"
