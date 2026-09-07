@@ -27,17 +27,12 @@ ENV PATH="/opt/venv/bin:$PATH" \
     PYTHONDONTWRITEBYTECODE=1 \
     MCP_HOST=0.0.0.0 \
     MCP_PORT=3000 \
-    MCP_DB_PATH=/data/metrics.db \
-    MCP_STANDARDS_ROOT=/app/standards
+    MCP_DB_PATH=/data/metrics.db
 
 COPY --from=build /opt/venv /opt/venv
 
 WORKDIR /app
 COPY mcp/ /app/mcp/
-COPY scripts/ /app/scripts/
-# Baked-in corpus, so the image runs standalone. Compose bind-mounts over this
-# for live editing.
-COPY standards/ /app/standards/
 
 RUN mkdir -p /data && chown -R playbook:playbook /data /app
 USER playbook

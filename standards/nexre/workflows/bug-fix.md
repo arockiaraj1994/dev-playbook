@@ -10,7 +10,7 @@ see_also: [language:kotlin/anti-patterns, core:guardrails]
 
 ## Before you start
 
-1. Call `playbook_get(project="nexre", ref="guardrails")` - re-read the always-on rules.
+1. Call `playbook_get_doc(project="nexre", kind="guardrails")` - re-read the always-on rules.
 2. Read `languages/kotlin/anti-patterns.md` - most bugs in this project fall into one of those categories.
 3. **Understand the bug first** - don't write code until you know the root cause.
 

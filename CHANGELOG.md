@@ -8,6 +8,23 @@ changes after 1.0.0 will bump the **major**.
 
 ## [Unreleased]
 
+### Removed - BREAKING - v1.0.0 (standards feature deleted)
+- **The standards feature is gone, code included.** Deleted `standards/`,
+  `mcp/tools/` (all three `playbook_*` tools), `mcp/loader.py`, `mcp/corpus.py`,
+  `mcp/search.py`, `mcp/cache.py`, `mcp/refs.py`, `mcp/index_render.py`,
+  `mcp/quality.py`, `mcp/quality_rules.py`, `scripts/validate-rules.py`,
+  `mcp/dev.py`, `TEMPLATE.md` and `CONTRIBUTING.md`.
+- **The MCP server advertises no tools.** `list_tools()` returns `[]`; every
+  `tools/call` returns `Unknown tool`. Dispatch, timing and metrics recording
+  are intact, so a new surface can be added at one place in `mcp/server.py`.
+- Dashboard loses the Standards and Guide pages, the corpus-health scoring, the
+  project detail view and `POST /dashboard/reload`. Users, tools, searches,
+  activity, setup, tokens and user admin remain.
+- CI drops the corpus validation job; pre-commit drops the `validate-rules` hook.
+- Docker no longer bakes in or bind-mounts a corpus; `MCP_STANDARDS_ROOT` is gone.
+- Tests: 280 → 105 (the corpus, search, quality, refs and tool suites are gone).
+- Version bumped to **1.0.0**.
+
 ### Removed - BREAKING - v0.9.0 (requirements corpus dropped)
 - **The second corpus is gone.** `requirements/` (PRDs, stories, authoring
   workflows), `mcp/requirement_rules.py`, the PRD/STORY templates, both

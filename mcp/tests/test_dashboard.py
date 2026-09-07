@@ -10,11 +10,8 @@ import pytest
 
 
 @pytest.fixture
-async def app_with_data(tmp_rules_root: Path, tmp_path: Path):
+async def app_with_data(tmp_path: Path):
     """Build the Starlette app with metrics seeded with a small dataset."""
-    import loader
-
-    loader._DEFAULT_RULES_ROOT = tmp_rules_root  # noqa: SLF001
     if "server" in sys.modules:
         del sys.modules["server"]
     server = importlib.import_module("server")

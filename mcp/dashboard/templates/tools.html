@@ -118,12 +118,12 @@
   <div class="panel-header">
     <div>
       <h2 class="panel-title">Most fetched docs</h2>
-      <div class="panel-sub">playbook_get calls - last {{ window_days }}d</div>
+      <div class="panel-sub">Doc fetches - last {{ window_days }}d</div>
     </div>
   </div>
   <div class="panel-body flush">
     {% if not doc_fetches %}
-      <div class="empty" style="margin:16px">No <code>playbook_get</code> calls in this window.</div>
+      <div class="empty" style="margin:16px">No doc fetches in this window.</div>
     {% else %}
     <table class="grid" id="doc-fetch-table">
       <thead>

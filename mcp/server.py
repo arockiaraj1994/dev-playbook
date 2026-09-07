@@ -1,14 +1,10 @@
 """
-server.py - Dev Playbook MCP Server (SSE only; read-only rules + usage metrics).
+server.py - Dev Playbook MCP Server (SSE only).
 
-Tools (3, all read-only, playbook_ namespaced):
- - playbook_start - THE entry point. mode=code (default): identity + guardrails +
-                    matched workflow + next calls (+ optional ref="req:ST-101").
-                    mode=prd|story: the authoring bootstrap.
- - playbook_get   - fetch one doc by ref= ("guardrails", "pattern:repository",
-                    "language:kotlin/testing", "workflow:bug-fix") - the same
-                    grammar the corpus uses in see_also:.
- - playbook_find  - list docs (no query) or search (with query); type= filter.
+The standards corpus and its three playbook_* tools were removed in v1.0.0.
+What remains is the server skeleton: SSE transport, local auth, dashboard
+sessions and usage metrics - a base to build a new tool surface on. The MCP
+server currently advertises no tools.
 
 Run:
   uv run server.py
@@ -30,12 +26,8 @@ Other env vars:
   MCP_HOST - bind host (default 127.0.0.1; 0.0.0.0 for LAN)
   MCP_DB_PATH - sqlite DB (default <repo>/mcp/data/metrics.db)
   MCP_INACTIVE_DAYS - "inactive" threshold (default 2)
-  MCP_SNIPPET_SIZE - search snippet size chars (default 300, 50 - 5000)
   MCP_ADMIN_USER - override default admin username (default: admin)
   MCP_ADMIN_PASSWORD - override default admin password (default: admin)
-  MCP_STANDARDS_ROOT - standards corpus root (default <repo>/standards)
-
-Docs load from standards/ at boot; POST /dashboard/reload picks up edits.
 """
 
 from __future__ import annotations
@@ -66,8 +58,6 @@ from starlette.routing import Mount, Route
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from auth import AuthStore
-from cache import CorpusCache
-from corpus import standards_spec
 from dashboard.auth_routes import build_auth_routes
 from dashboard.routes import build_dashboard_routes
 from identity import (
@@ -78,14 +68,8 @@ from identity import (
     resolve_bearer_token,
     scope_principal,
 )
-from loader import DocStore, bootstrap_all, resolve_rules_root
 from metrics import MetricsStore, summarize_args
-from search import RulesSearchEngine
 from session import DashboardSession
-from tools import READ_ONLY
-from tools import find as _find_mod
-from tools import get as _get_mod
-from tools import start as _start_mod
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -99,53 +83,11 @@ logging.basicConfig(
 logger = logging.getLogger("dev-playbook")
 
 SERVER_LABEL = os.getenv("MCP_SERVER_LABEL", "dev-playbook")
-SERVER_VERSION = "0.9.0"
+SERVER_VERSION = "1.0.0"
 DEFAULT_PORT = 3000
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_INACTIVE_DAYS = 2
 _DEFAULT_DB_REL = Path("data") / "metrics.db"
-
-# ---------------------------------------------------------------------------
-# Startup - load the corpus + index
-# ---------------------------------------------------------------------------
-
-logger.info("Bootstrapping standards store...")
-try:
-    store: DocStore = bootstrap_all()
-except FileNotFoundError as e:
-    logger.error("%s", e)
-    sys.exit(1)
-
-if not store.all_docs():
-    root = resolve_rules_root()
-    found_subdirs = (
-        sorted(p.name for p in root.iterdir() if p.is_dir() and not p.name.startswith("."))
-        if root.is_dir()
-        else []
-    )
-    hint = (
-        f"Found subdirs but none had loadable .md rules: {found_subdirs}."
-        if found_subdirs
-        else "No project subdirectories found under standards/."
-    )
-    logger.error("No standards markdown docs loaded under %s. %s", root, hint)
-    sys.exit(1)
-
-standards_cache = CorpusCache(standards_spec())
-# Docs are already in `store` from bootstrap_all; hand the same list to the
-# cache rather than parsing the tree twice.
-standards_cache._docs = store.all_docs()  # noqa: SLF001
-
-
-def _on_standards_reload(_name: str, fresh: list) -> None:
-    store.replace_all(fresh)
-    engine.rebuild(store)
-
-
-standards_cache._on_reload = _on_standards_reload  # noqa: SLF001
-
-engine: RulesSearchEngine = RulesSearchEngine(store)
-logger.info("Ready. Projects: %s", store.projects())
 
 # Set by build_app(). The MCP `Server` is module-scoped, so dispatch_tool /
 # _record_call (also module-scoped) read this through the module global rather
@@ -158,24 +100,11 @@ metrics_store: MetricsStore | None = None
 
 server = Server(SERVER_LABEL)
 
-_TOOL_MODULES = [
-    _start_mod,
-    _get_mod,
-    _find_mod,
-]
-
 
 @server.list_tools()
 async def list_tools() -> list[Tool]:
-    # Every tool here is read-only; stamp the annotation centrally so a new
-    # tool cannot ship without it. model_copy keeps module DEFINITIONS pristine.
-    defs: list[Tool] = []
-    for mod in _TOOL_MODULES:
-        defs.extend(
-            t if t.annotations else t.model_copy(update={"annotations": READ_ONLY})
-            for t in mod.DEFINITIONS
-        )
-    return defs
+    """No tools yet - the playbook surface was removed in v1.0.0."""
+    return []
 
 
 @dataclass
@@ -188,10 +117,6 @@ class _CallContext:
 
 
 async def _dispatch_typed(name: str, arguments: dict, ctx: _CallContext) -> list[TextContent]:
-    for mod in _TOOL_MODULES:
-        result = await mod.dispatch(name, arguments, ctx, store, engine)
-        if result is not None:
-            return result
     ctx.status = "error"
     return [TextContent(type="text", text=f"Unknown tool: {name}")]
 
@@ -333,14 +258,8 @@ def load_mcp_config() -> McpConfig:
 
 
 SERVER_INSTRUCTIONS = (
-    "Development-standards playbook server. For any coding task, call "
-    "playbook_start first - it returns guardrails, the matched workflow, and "
-    'exact next calls. To author a PRD or story, call it with mode="prd" or '
-    'mode="story". Fetch specific docs with playbook_get(ref=...), where a '
-    "ref is the same string the corpus uses in see_also: frontmatter "
-    '("guardrails", "pattern:repository", "req:ST-101"); discover them '
-    "with playbook_find. Always pass the basename of the user's workspace "
-    "directory as `project`."
+    "Dev Playbook server. This instance advertises no tools - the standards "
+    "surface was removed in v1.0.0 and a new one has not been added yet."
 )
 
 
@@ -692,9 +611,6 @@ def build_app(deps: AppDeps) -> Starlette:
                 deps.auth_store,
                 dashboard_session,
                 auth_enabled=deps.cfg.auth_enabled,
-                rules_store=store,
-                rules_root=resolve_rules_root(),
-                standards_cache=standards_cache,
             ),
         ),
         Route("/", endpoint=_root_redirect, methods=["GET"]),

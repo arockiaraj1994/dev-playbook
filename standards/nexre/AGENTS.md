@@ -2,7 +2,7 @@
 title: AGENTS.md - NexRe
 description: Identity and behavior for AI agents working on NexRe, a privacy-first read-it-later Android app (Kotlin + Compose + Hilt + Room).
 tags: [android, kotlin, compose, hilt, room, clean-architecture]
-see_also: [tool:playbook_start, tool:playbook_get, workflow:new-feature, workflow:bug-fix]
+see_also: [tool:playbook_start_task, tool:playbook_get_doc, workflow:new-feature, workflow:bug-fix]
 ---
 
 # AGENTS.md - NexRe (Android · Kotlin · Compose · Hilt · Room)
@@ -31,7 +31,6 @@ You fix root causes, not symptoms.
 | `./core/guardrails.md` | Always-on MUST / MUST NOT rules |
 | `./core/definition-of-done.md` | Build + lint + security gates |
 | `./core/glossary.md` | Domain terms (Link, Tag, SourcePlatform, etc.) |
-| `./architecture/overview.md` | Layer map, module boundaries, data flow |
 | `./languages/kotlin/standards.md` | Kotlin coding standards for this project |
 | `./languages/kotlin/testing.md` | Testing approach and rules |
 | `./languages/kotlin/anti-patterns.md` | What NOT to do |
@@ -48,7 +47,7 @@ You fix root causes, not symptoms.
 | `./workflows/refactor.md` | Flow for refactoring |
 | `./gates/README.md` | Verification gate instructions |
 
-**Call `playbook_start` first.** It returns guardrails + the matched workflow + next-call hints.
+**Call `playbook_start_task` first.** It returns guardrails + the matched workflow + next-call hints.
 For ad-hoc work, always read `./core/guardrails.md` and `./languages/kotlin/anti-patterns.md` before writing code.
 
 ---

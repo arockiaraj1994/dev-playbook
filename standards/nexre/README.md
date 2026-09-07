@@ -7,7 +7,7 @@ NexRe lets users save URLs and plain-text notes (via Android share sheet or in-a
 ## Quick start
 
 ```
-playbook_start("nexre", "<your task description>")
+playbook_start_task("nexre", "<your task description>")
 ```
 
 The server returns guardrails + matched workflow + next calls. Follow the chain.

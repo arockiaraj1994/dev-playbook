@@ -10,7 +10,7 @@ see_also: [language:kotlin/standards, language:kotlin/anti-patterns, core:guardr
 
 ## Before you start
 
-1. Call `playbook_get(project="nexre", ref="guardrails")` - scope control is critical for refactors.
+1. Call `playbook_get_doc(project="nexre", kind="guardrails")` - scope control is critical for refactors.
 2. **Define what changes and what stays.** State this explicitly before touching any code.
 3. Refactors must be behavior-preserving - if you find a bug while refactoring, fix it in a separate change.
 
