@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}{{ status.project }} - Standards{% endblock %}
+{% block crumb %}<a href="/dashboard/standards" style="color:inherit">Standards</a> <span class="crumbs-sep">/</span> <span class="current">{{ status.project }}</span>{% endblock %}
+
+{% block content %}
+
+<div class="page-header">
+  <div>
+    <h1 class="page-title">
+      <span class="indicator-dot indicator-{{ status.indicator }}" style="vertical-align:middle;margin-right:8px"></span>
+      {{ status.project }}
+    </h1>
+    <p class="page-sub">
+      {{ status.total_files }} indexed file{{ '' if status.total_files == 1 else 's' }} –
+      <span style="color:var(--text)">🟢 {{ status.counts.green }}</span> ·
+      <span style="color:var(--amber-700)">🟡 {{ status.counts.amber }}</span> ·
+      <span style="color:var(--red-700)">🔴 {{ status.counts.red }}</span>
+      {% if status.missing_required %}
+        · <span class="badge red">{{ status.missing_required|length }} missing required</span>
+      {% endif %}
+    </p>
+  </div>
+</div>
+
+{% if status.missing_required %}
+<div class="callout-amber">
+  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;margin-top:1px"><path d="m10.29 3.86-8.66 15A1 1 0 0 0 2.5 20.5h19a1 1 0 0 0 .87-1.5l-8.66-15a1 1 0 0 0-1.74 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+  <div>
+    <strong>Missing required files:</strong>
+    <ul style="margin:6px 0 0 18px">
+      {% for path in status.missing_required %}
+      <li><code>{{ path }}</code></li>
+      {% endfor %}
+    </ul>
+  </div>
+</div>
+{% endif %}
+
+{# Project-level rules summary #}
+<section class="doc-section">
+  <h2>Project-level checks</h2>
+  <ul class="rule-list">
+    {% for r in status.rule_results %}
+    <li class="rule-row {% if r.passed %}rule-pass{% else %}rule-fail{% endif %}">
+      <span class="indicator-dot indicator-{{ 'green' if r.passed else ('red' if r.severity == 'hard' else 'amber') }}"></span>
+      <span class="rule-message">{{ r.message }}</span>
+      <span class="rule-severity">{{ r.severity }}</span>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+
+{# File tree grouped by folder #}
+<section class="doc-section">
+  <h2>Files</h2>
+  {% for group_name, group_files in groups %}
+  <div class="file-group">
+    <div class="file-group-head">{{ group_name }}/</div>
+    {% for fs in group_files %}
+    <details class="file-card file-{{ fs.indicator }}">
+      <summary class="file-summary">
+        <span class="indicator-dot indicator-{{ fs.indicator }}"
+              title="{{ fs.indicator|capitalize }} – {{ fs.failed|length }} rule(s) failing"></span>
+        <code class="file-path">{{ fs.relative_path }}</code>
+        {% if fs.title and fs.title != fs.name %}
+          <span class="file-title">{{ fs.title }}</span>
+        {% endif %}
+        <span class="file-counts">
+          {% set hard_fails = fs.hard_failures|length %}
+          {% set soft_fails = fs.soft_failures|length %}
+          {% if hard_fails %}<span class="badge red">{{ hard_fails }} hard</span>{% endif %}
+          {% if soft_fails %}<span class="badge amber">{{ soft_fails }} soft</span>{% endif %}
+          {% if not hard_fails and not soft_fails %}<span class="badge green"><span class="badge-dot"></span>all rules pass</span>{% endif %}
+        </span>
+      </summary>
+      <div class="file-body">
+        {% if fs.summary %}<p class="file-desc">{{ fs.summary }}</p>{% endif %}
+        <ul class="rule-list">
+          {% for r in fs.rules %}
+          <li class="rule-row {% if r.passed %}rule-pass{% else %}rule-fail{% endif %}">
+            <span class="indicator-dot indicator-{{ 'green' if r.passed else ('red' if r.severity == 'hard' else 'amber') }}"></span>
+            <span class="rule-message">{{ r.message }}</span>
+            <span class="rule-id mono">{{ r.rule_id }}</span>
+            <span class="rule-severity">{{ r.severity }}</span>
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+    </details>
+    {% endfor %}
+  </div>
+  {% endfor %}
+</section>
+
+{% endblock %}

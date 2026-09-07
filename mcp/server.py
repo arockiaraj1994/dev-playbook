@@ -447,6 +447,7 @@ class AppDeps:
     metrics: MetricsStore
     inactive_days: int
     auth_store: AuthStore
+    standards_root: Path | None = field(default=None)
     sse_transport: SseServerTransport | None = field(default=None)
 
 
@@ -611,6 +612,7 @@ def build_app(deps: AppDeps) -> Starlette:
                 deps.auth_store,
                 dashboard_session,
                 auth_enabled=deps.cfg.auth_enabled,
+                standards_root=deps.standards_root,
             ),
         ),
         Route("/", endpoint=_root_redirect, methods=["GET"]),
@@ -660,6 +662,16 @@ def _resolve_inactive_days() -> int:
         return DEFAULT_INACTIVE_DAYS
 
 
+def _resolve_standards_root() -> Path | None:
+    raw = os.environ.get("MCP_STANDARDS_ROOT", "").strip()
+    if raw:
+        p = Path(raw).expanduser().resolve()
+        return p if p.is_dir() else None
+    # Default: <repo>/standards (one level above mcp/)
+    default = Path(__file__).resolve().parent.parent / "standards"
+    return default if default.is_dir() else None
+
+
 async def _serve() -> None:
     cfg = load_mcp_config()
     port = _int_env("MCP_PORT", DEFAULT_PORT)
@@ -689,7 +701,12 @@ async def _serve() -> None:
     logger.info("Auth store ready (default admin: %s)", cfg.admin_username)
 
     days = _resolve_inactive_days()
-    app = build_app(AppDeps(cfg=cfg, metrics=metrics, inactive_days=days, auth_store=auth_store))
+    standards_root = _resolve_standards_root()
+    logger.info("Standards root: %s", standards_root)
+    app = build_app(AppDeps(
+        cfg=cfg, metrics=metrics, inactive_days=days,
+        auth_store=auth_store, standards_root=standards_root,
+    ))
 
     logger.info(
         "Starting on http://%s:%d (auth=%s, inactive_days=%d, db=%s)",

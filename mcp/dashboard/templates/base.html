@@ -60,6 +60,19 @@
         </a>
       </div>
 
+      <div class="nav-group" data-group="content">
+        <button type="button" class="nav-group-toggle" aria-expanded="false" aria-controls="nav-content">
+          <span>Content</span>
+          <svg class="nav-chevron" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+        <div class="nav-group-items" id="nav-content" hidden>
+          <a href="/dashboard/standards" class="nav-item {% if page == 'standards' %}active{% endif %}" title="Standards">
+            <svg class="nav-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+            <span class="nav-label">Standards</span>
+          </a>
+        </div>
+      </div>
+
       <div class="nav-group" data-group="manage">
         <button type="button" class="nav-group-toggle" aria-expanded="false" aria-controls="nav-manage">
           <span>Manage</span>

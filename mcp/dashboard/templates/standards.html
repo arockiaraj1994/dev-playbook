@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}Standards - {{ server_label }}{% endblock %}
+{% block crumb %}Standards{% endblock %}
+
+{% block content %}
+
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Standards</h1>
+    <p class="page-sub">Health of every standards project under <code>standards/</code>. Click a row for the file-by-file fix-it list.</p>
+  </div>
+</div>
+
+{% if not projects %}
+<div class="callout">
+  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;margin-top:1px"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+  <div>No standards projects found. Add a project under <code>standards/</code> and restart the server.</div>
+</div>
+{% else %}
+
+{% set total_files  = projects | sum(attribute="total_files") %}
+{% set red_total    = projects | sum(attribute="counts.red") %}
+{% set amber_total  = projects | sum(attribute="counts.amber") %}
+{% set green_total  = projects | sum(attribute="counts.green") %}
+{% set healthy_pct  = (green_total * 100 // total_files) if total_files else 0 %}
+
+<div class="kpi-grid" style="margin-bottom:24px">
+  <div class="kpi">
+    <div class="kpi-label">Projects</div>
+    <div class="kpi-value">{{ projects|length }}</div>
+    <div class="kpi-foot">under standards/</div>
+  </div>
+  <div class="kpi">
+    <div class="kpi-label">Indexed files</div>
+    <div class="kpi-value">{{ total_files }}</div>
+    <div class="kpi-foot">across all projects</div>
+  </div>
+  <div class="kpi">
+    <div class="kpi-label">Healthy</div>
+    <div class="kpi-value">{{ healthy_pct }}<span class="kpi-unit">%</span></div>
+    <div class="kpi-foot">{{ green_total }} of {{ total_files }} files pass every rule</div>
+  </div>
+  <div class="kpi">
+    <div class="kpi-label">Need attention</div>
+    <div class="kpi-value">{{ amber_total + red_total }}</div>
+    <div class="kpi-foot">
+      {% if red_total %}<span class="dot-inline indicator-red"></span>{{ red_total }} hard{% endif %}
+      {% if red_total and amber_total %} · {% endif %}
+      {% if amber_total %}<span class="dot-inline indicator-amber"></span>{{ amber_total }} soft{% endif %}
+      {% if not red_total and not amber_total %}all clear{% endif %}
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head">
+    <h2 class="card-title">All projects</h2>
+    <span class="card-sub">{{ projects|length }} configured</span>
+  </div>
+  <div class="project-list">
+    {% for p in projects %}
+    {% set total = p.total_files or 1 %}
+    {% set pct_red   = p.counts.red   * 100 // total %}
+    {% set pct_amber = p.counts.amber * 100 // total %}
+    {% set pct_green = 100 - pct_red - pct_amber %}
+    {% set status_label = 'Action needed' if p.indicator == 'red' else ('Needs review' if p.indicator == 'amber' else 'Healthy') %}
+    <a class="project-row project-row-{{ p.indicator }}" href="/dashboard/standards/{{ p.project }}">
+      <div class="project-row-main">
+        <div class="project-row-title">
+          <span class="indicator-dot indicator-{{ p.indicator }}"></span>
+          <span class="project-name">{{ p.project }}</span>
+          <span class="status-pill status-pill-{{ p.indicator }}">{{ status_label }}</span>
+          {% if p.missing_required %}
+          <span class="status-pill status-pill-red">{{ p.missing_required|length }} missing required</span>
+          {% endif %}
+        </div>
+        <div class="project-row-meta">
+          {{ p.total_files }} indexed file{{ '' if p.total_files == 1 else 's' }} ·
+          <strong>{{ p.counts.green }}</strong> green ·
+          <strong>{{ p.counts.amber }}</strong> amber ·
+          <strong>{{ p.counts.red }}</strong> red
+        </div>
+        <div class="health-bar" aria-hidden="true">
+          {% if pct_red %}<span class="health-bar-seg health-bar-red" style="width:{{ pct_red }}%"></span>{% endif %}
+          {% if pct_amber %}<span class="health-bar-seg health-bar-amber" style="width:{{ pct_amber }}%"></span>{% endif %}
+          {% if pct_green %}<span class="health-bar-seg health-bar-green" style="width:{{ pct_green }}%"></span>{% endif %}
+        </div>
+      </div>
+      <div class="project-row-aside">
+        <div class="project-row-pct">{{ (p.counts.green * 100 // total) }}%</div>
+        <div class="project-row-pct-label">healthy</div>
+        <svg class="project-row-chev" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}

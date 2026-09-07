@@ -104,6 +104,7 @@ def build_dashboard_routes(
     auth_store: AuthStore | None = None,
     dashboard_session: DashboardSession | None = None,
     auth_enabled: bool = False,
+    standards_root: Path | None = None,
 ) -> list[BaseRoute]:
     templates = _build_templates()
 
@@ -441,6 +442,66 @@ def build_dashboard_routes(
             return RedirectResponse("/dashboard/users-admin?error=duplicate", status_code=303)
         return RedirectResponse("/dashboard/users-admin?created=1", status_code=303)
 
+    # -- Standards (corpus health) -------------------------------------------
+
+    async def standards_view(request: Request) -> Response:
+        from standards_scanner import scan_all
+
+        projects = scan_all(standards_root) if standards_root else []
+        return templates.TemplateResponse(
+            request,
+            "standards.html",
+            _ctx(request, page="standards", projects=projects),
+        )
+
+    async def standard_detail_view(request: Request) -> Response:
+        from standards_scanner import scan_project
+
+        name = request.path_params.get("name", "")
+        if not standards_root or not (standards_root / name).is_dir():
+            return HTMLResponse(
+                f"<p>Project <code>{_html_escape(name)}</code> not found.</p>",
+                status_code=404,
+            )
+        status = scan_project(name, standards_root / name)
+        # Group files by their top-level folder for display.
+        groups: dict[str, list] = {}
+        for fs in status.files:
+            head = (
+                fs.relative_path.split("/", 1)[0] if "/" in fs.relative_path else fs.relative_path
+            )
+            groups.setdefault(head, []).append(fs)
+        # Stable ordering of groups.
+        group_order = [
+            "AGENTS.md",
+            "INDEX.md",
+            "README.md",
+            "core",
+            "languages",
+            "patterns",
+            "skills",
+            "workflows",
+            "gates",
+        ]
+
+        def _gkey(k: str) -> int:
+            try:
+                return group_order.index(k)
+            except ValueError:
+                return len(group_order)
+
+        ordered_groups = sorted(groups.items(), key=lambda kv: _gkey(kv[0]))
+        return templates.TemplateResponse(
+            request,
+            "standard_detail.html",
+            _ctx(
+                request,
+                page="standards",
+                status=status,
+                groups=ordered_groups,
+            ),
+        )
+
     static = Mount("/static", app=StaticFiles(directory=str(_STATIC_DIR)), name="static")
 
     return [
@@ -449,6 +510,8 @@ def build_dashboard_routes(
         Route("/tools", endpoint=tools_view, methods=["GET"]),
         Route("/searches", endpoint=searches_view, methods=["GET"]),
         Route("/activity", endpoint=activity_view, methods=["GET"]),
+        Route("/standards", endpoint=standards_view, methods=["GET"]),
+        Route("/standards/{name}", endpoint=standard_detail_view, methods=["GET"]),
         Route("/setup", endpoint=setup_view, methods=["GET"]),
         Route("/api/me/last-call", endpoint=setup_last_call_api, methods=["GET"]),
         Route("/api/palette", endpoint=palette_api, methods=["GET"]),
