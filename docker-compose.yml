@@ -33,22 +33,17 @@ services:
       MCP_PORT: "3000"
       MCP_DB_PATH: /data/metrics.db
       MCP_STANDARDS_ROOT: /app/standards
-      MCP_REQUIREMENTS_ROOT: /app/requirements
       MCP_SERVER_LABEL: "${MCP_SERVER_LABEL:-dev-playbook}"
       MCP_ADMIN_USER: "${MCP_ADMIN_USER:-admin}"
       # No default: compose fails loudly rather than the server exiting 1.
       MCP_ADMIN_PASSWORD: "${MCP_ADMIN_PASSWORD:?set MCP_ADMIN_PASSWORD in .env}"
       MCP_INACTIVE_DAYS: "${MCP_INACTIVE_DAYS:-2}"
       MCP_SNIPPET_SIZE: "${MCP_SNIPPET_SIZE:-300}"
-      # Requirements are TTL-reloaded, so edits under requirements/ appear
-      # without a restart. Standards are cached at boot.
-      MCP_REQUIREMENTS_TTL: "${MCP_REQUIREMENTS_TTL:-300}"
 
     volumes:
-      # Live-edit the corpora: rule authors change markdown on the host and the
-      # server serves it. Read-only - the server never writes to them.
+      # Live-edit the corpus: rule authors change markdown on the host and the
+      # server serves it. Read-only - the server never writes to it.
       - ./standards:/app/standards:ro
-      - ./requirements:/app/requirements:ro
       # Metrics + auth SQLite. Named volume so `docker compose down` keeps
       # usage history and issued MCP tokens.
       - playbook-data:/data

@@ -35,7 +35,6 @@ from refs import (
         ("workflow:bug-fix", Ref("workflow", "bug-fix")),
         ("gate", Ref("gate")),
         ("gate:verify-java", Ref("gate", "verify-java")),
-        ("req:ST-101", Ref("req", "ST-101")),
         ("  pattern:repository  ", Ref("pattern", "repository")),
     ],
 )
@@ -50,7 +49,6 @@ def test_parse_ref(raw: str, expected: Ref) -> None:
         # keep resolving - a corpus does not have to be rewritten for them.
         ("gates:verify-java", Ref("gate", "verify-java")),
         ("gates:README", Ref("gate")),
-        ("requirement:ST-101", Ref("req", "ST-101")),
         ("core:guardrails", Ref("guardrails")),
         ("core:definition-of-done", Ref("guardrails")),
         ("architecture:overview", Ref("architecture")),
@@ -69,7 +67,6 @@ def test_parse_ref_legacy_spellings(raw: str, expected: Ref) -> None:
         ("nonsense:x", "Unknown ref kind"),
         ("pattern", "needs a name"),
         ("skill", "needs a name"),
-        ("req", "needs a name"),
         ("agents:x", "takes no name"),
         ("guardrails:nope", "Unknown core doc"),
         ("language:kotlin/nope", "Unknown language section"),
@@ -81,9 +78,7 @@ def test_parse_ref_rejects(bad: str, message_contains: str) -> None:
     assert message_contains in str(exc.value)
 
 
-@pytest.mark.parametrize(
-    "raw", ["agents", "pattern:foo", "language:kotlin/testing", "gate", "req:ST-1"]
-)
+@pytest.mark.parametrize("raw", ["agents", "pattern:foo", "language:kotlin/testing", "gate"])
 def test_ref_round_trips_through_its_string(raw: str) -> None:
     """str(Ref) must re-parse to the same Ref, so a rendered Next Call can be
     pasted straight back into playbook_get."""
@@ -109,11 +104,10 @@ def test_relative_path(raw: str, expected: str) -> None:
     assert relative_path(parse_ref(raw)) == expected
 
 
-@pytest.mark.parametrize("raw", ["guardrails", "req:ST-101"])
-def test_relative_path_none_for_looked_up_kinds(raw: str) -> None:
-    """guardrails spans two files and req is an id lookup: neither has a single
-    static path, and callers must go through render_ref instead."""
-    assert relative_path(parse_ref(raw)) is None
+def test_relative_path_none_for_guardrails() -> None:
+    """guardrails spans two files, so it has no single static path - callers
+    must go through render_ref instead."""
+    assert relative_path(parse_ref("guardrails")) is None
 
 
 def test_every_kind_renders_a_call() -> None:
@@ -128,7 +122,6 @@ def test_every_kind_renders_a_call() -> None:
         "skill": "skill:add-screen",
         "workflow": "workflow:bug-fix",
         "gate": "gate:verify-java",
-        "req": "req:ST-101",
     }
     assert set(examples) == set(REF_KINDS), "a ref kind has no example here"
     for kind, raw in examples.items():

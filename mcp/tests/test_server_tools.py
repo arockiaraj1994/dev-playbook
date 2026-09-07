@@ -1,9 +1,9 @@
 """
 Tests for the MCP tool handlers in server.py.
 
-server.py loads corpora at import time. We point MCP_STANDARDS_ROOT (and an
-empty MCP_REQUIREMENTS_ROOT) at a temp tree *before* importing server, and
-reload corpus/loader/cache/server so the bootstrap picks up the fixture.
+server.py loads the corpus at import time. We point MCP_STANDARDS_ROOT at a temp
+tree *before* importing server, and reload corpus/loader/cache/server so the
+bootstrap picks up the fixture.
 """
 
 from __future__ import annotations
@@ -19,10 +19,7 @@ import pytest
 
 def _import_server_with_root(tmp_rules_root: Path):
     """(Re)import the server module with standards pointing at tmp_rules_root."""
-    empty_req = tmp_rules_root / "_empty_requirements"
-    empty_req.mkdir(exist_ok=True)
     os.environ["MCP_STANDARDS_ROOT"] = str(tmp_rules_root)
-    os.environ["MCP_REQUIREMENTS_ROOT"] = str(empty_req)
 
     # Drop cached modules so corpus specs and bootstrap re-read env.
     for mod in (
@@ -318,29 +315,13 @@ async def test_start_requires_intent(srv) -> None:
     assert "`intent` is required" in result[0].text
 
 
-async def test_start_rejects_a_non_requirement_ref(srv) -> None:
-    """`ref` on playbook_start names a requirement, not an arbitrary doc."""
-    result = await _call(srv, "playbook_start", project="proj-a", intent="x", ref="pattern:foo")
-    assert "names a requirement" in result[0].text
-
-
-async def test_start_story_mode_needs_parent_prd(srv) -> None:
-    result = await _call(srv, "playbook_start", project="proj-a", intent="x", mode="story")
-    assert "required" in result[0].text.lower()
-
-
-async def test_start_rejects_unknown_mode(srv) -> None:
-    result = await _call(srv, "playbook_start", project="proj-a", intent="x", mode="bogus")
-    assert "`mode` must be one of" in result[0].text
-
-
 # ---------------------------------------------------------------------------
 # Removed tools
 # ---------------------------------------------------------------------------
 
 
-async def test_v070_tool_names_removed(srv) -> None:
-    """Breaking change in 0.8.0: the five-tool surface is gone."""
+async def test_removed_tool_names(srv) -> None:
+    """v0.8.0 cut the five-tool surface; v0.9.0 removed the requirements tools."""
     for old in (
         "playbook_start_task",
         "playbook_get_doc",

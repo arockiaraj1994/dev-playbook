@@ -8,6 +8,36 @@ changes after 1.0.0 will bump the **major**.
 
 ## [Unreleased]
 
+### Removed - BREAKING - v0.9.0 (requirements corpus dropped)
+- **The second corpus is gone.** `requirements/` (PRDs, stories, authoring
+  workflows), `mcp/requirement_rules.py`, the PRD/STORY templates, both
+  dashboard requirement pages and the nav item, and the `validate-requirements`
+  CI job are all removed. This reverts the v0.6.0 two-corpus feature; the server
+  serves standards only.
+- **Tool surface shrinks again:**
+  - `playbook_start(project, intent)` - `mode=` and `ref=` removed. It no longer
+    authors PRDs/stories or bundles a requirement.
+  - `playbook_get(project, ref)` - the `req:` ref kind is removed.
+  - `playbook_find(project, query?, type?)` - `corpus=`, `status=` and `prd=`
+    are removed.
+- **The corpus abstraction goes with it.** With one corpus, `corpus=` was a
+  parameter that could only ever hold one value, so it is gone from `DocStore`
+  (35 call sites), `RuleDoc`, `SearchResult`, the BM25 engine, and `CorpusSpec`
+  - which also loses `cache_policy` / `ttl_seconds`. `DocStore` drops
+  `find_by_id`, `stories_of`, `prd_of` and `replace_corpus`, gaining
+  `replace_all`.
+- **`MCP_REQUIREMENTS_ROOT` and `MCP_REQUIREMENTS_TTL` are removed**, along with
+  the TTL reload poll that ran before every tool dispatch.
+- **`POST /dashboard/reload` now reloads standards** instead of requirements, so
+  the dashboard's reload button keeps working - edits to `standards/` no longer
+  need a restart.
+- **Metrics keep their history.** The `requirement_id` / `corpus` columns stay in
+  the schema so pre-0.9.0 rows still read back, and `_LEGACY_TOOL_MAP` still folds
+  the old tool names onto the current three. Only the write path and the
+  requirement-coverage KPI are removed.
+- `standards/apache-camel/` removed; `standards/nexre/` is the reference project.
+- Version bumped to **0.9.0**.
+
 ### Changed - BREAKING - v0.8.0 (tool surface → 3, `ref` doc addresses)
 - **Five tools → three.** `playbook_start`, `playbook_get`, `playbook_find`.
   `playbook_start_task` + `playbook_start_requirement` merge into

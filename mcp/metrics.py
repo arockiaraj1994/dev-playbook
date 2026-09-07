@@ -60,6 +60,8 @@ _SCHEMA = (
         latency_ms       INTEGER NOT NULL,
         status           TEXT NOT NULL,
         created_at       TEXT NOT NULL,
+        -- Legacy columns from the two-corpus era (removed in v0.9.0). Kept so
+        -- rows recorded before the removal still read back.
         requirement_id   TEXT,
         corpus           TEXT
     )
@@ -337,8 +339,6 @@ class MetricsStore:
         doc_path: str | None = None,
         top_result_path: str | None = None,
         top_result_score: float | None = None,
-        requirement_id: str | None = None,
-        corpus: str | None = None,
     ) -> None:
         await asyncio.to_thread(
             self._record_call_sync,
@@ -353,8 +353,6 @@ class MetricsStore:
             doc_path,
             top_result_path,
             top_result_score,
-            requirement_id,
-            corpus,
         )
 
     def _record_call_sync(
@@ -370,8 +368,6 @@ class MetricsStore:
         doc_path: str | None,
         top_result_path: str | None,
         top_result_score: float | None,
-        requirement_id: str | None,
-        corpus: str | None,
     ) -> None:
         with _connect(self._path) as conn:
             conn.execute(
@@ -379,8 +375,8 @@ class MetricsStore:
                 INSERT INTO calls (
                     user_id, user_name, editor_name, tool_name, args_summary,
                     query, doc_path, top_result_path, top_result_score,
-                    latency_ms, status, created_at, requirement_id, corpus
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    latency_ms, status, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     user_id,
@@ -395,8 +391,6 @@ class MetricsStore:
                     latency_ms,
                     status,
                     _now(),
-                    requirement_id,
-                    corpus,
                 ),
             )
 
@@ -788,31 +782,6 @@ class MetricsStore:
             top_tools=top_tools,
             window_days=window_days,
         )
-
-    async def requirement_linked_rate(self, *, window_days: int = 30) -> float:
-        """% of start_task calls in the window that carried requirement_id."""
-        return await asyncio.to_thread(self._requirement_linked_rate_sync, window_days)
-
-    def _requirement_linked_rate_sync(self, window_days: int) -> float:
-        cutoff = _iso_offset(days=window_days)
-        with _connect(self._path) as conn:
-            row = conn.execute(
-                """
-                SELECT
-                    COUNT(*) AS total,
-                    SUM(CASE WHEN requirement_id IS NOT NULL AND requirement_id != ''
-                             THEN 1 ELSE 0 END) AS linked
-                FROM calls
-                WHERE tool_name IN ('start_task', 'playbook_start_task')
-                  AND created_at >= ?
-                """,
-                (cutoff,),
-            ).fetchone()
-        total = int(row["total"] or 0)
-        linked = int(row["linked"] or 0)
-        if total == 0:
-            return 0.0
-        return round(100.0 * linked / total, 1)
 
     async def list_recent_calls(self, *, limit: int) -> list[CallRow]:
         return await asyncio.to_thread(self._list_recent_calls_sync, limit)

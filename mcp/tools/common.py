@@ -74,18 +74,13 @@ class ProjectResolution:
 
 
 def canonical_project(given: str, known: list[str]) -> str | None:
-    """Return the corpus project matching `given` (exact, then case-insensitive)."""
+    """Return the project matching `given` (exact, then case-insensitive)."""
     if given in known:
         return given
     return {p.lower(): p for p in known}.get(given.lower())
 
 
-def resolve_project(
-    store: RulesStore,
-    project_arg: str | None,
-    *,
-    corpus: str = "standards",
-) -> ProjectResolution:
+def resolve_project(store: RulesStore, project_arg: str | None) -> ProjectResolution:
     """Validate `project`, or explain what the valid values are.
 
     `project` is required on every tool, so an omitted value is an error rather
@@ -93,13 +88,10 @@ def resolve_project(
     there is nothing to disambiguate.
     """
     given = (project_arg or "").strip()
-    known = list(store.projects(corpus=corpus))
-    if not known and corpus == "standards":
-        known = list(store.projects())
-    all_known = list(store.projects(corpus=None)) or known
+    known = store.projects()
 
     if given:
-        canonical = canonical_project(given, known) or canonical_project(given, all_known)
+        canonical = canonical_project(given, known)
         if canonical is not None:
             return ProjectResolution(canonical)
         listing = "\n".join(f"- {p}" for p in known) or "(none)"
@@ -178,9 +170,8 @@ def triggers(doc: RuleDoc) -> list[str]:
     return [t.strip() for t in raw if isinstance(t, str) and t.strip()]
 
 
-def get_doc(store: RulesStore, project: str, relative_path: str, corpus: str = "standards"):
-    """store.get with a single-corpus fallback (unit-test stores have no corpus)."""
-    return store.get(project, relative_path, corpus=corpus) or store.get(project, relative_path)
+def get_doc(store: RulesStore, project: str, relative_path: str):
+    return store.get(project, relative_path)
 
 
 # ---------------------------------------------------------------------------

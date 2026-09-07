@@ -4,9 +4,6 @@ Copy-pasteable starting points for the doc types in the per-project layout
 under `standards/<project>/`. See [`CONTRIBUTING.md`](CONTRIBUTING.md) for
 naming, the pattern-vs-skill rule, and the H1 convention.
 
-For PRDs and stories, use `mcp/templates/PRD.md` and `mcp/templates/STORY.md`
-(or call `playbook_start(mode="prd")`) and place them under `requirements/<project>/`.
-
 The YAML frontmatter block is optional except where noted (workflows and
 skills should set `triggers:` and `see_also:` so `playbook_start` and
 `INDEX.md` work).

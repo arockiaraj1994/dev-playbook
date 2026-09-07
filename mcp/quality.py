@@ -1,5 +1,5 @@
 """
-quality.py - Score the per-project rule corpus for the dashboard.
+quality.py - Score the per-project standards corpus for the dashboard.
 
 Pure functions over the in-memory `RulesStore`. Used by the Projects
 pages in the dashboard. See `quality_rules.py` for the rule library.
@@ -270,14 +270,7 @@ def score_project(
     store: RulesStore,
     project_root: Path,
 ) -> ProjectStatus:
-    project_files = store.for_project(project, corpus="standards")
-    if not project_files:
-        # Back-compat for tests that don't set corpus
-        project_files = [
-            d
-            for d in store.for_project(project)
-            if getattr(d, "corpus", "standards") == "standards"
-        ]
+    project_files = store.for_project(project)
 
     # Read INDEX.md from disk once and pass into RuleContext.
     index_path = project_root / "INDEX.md"

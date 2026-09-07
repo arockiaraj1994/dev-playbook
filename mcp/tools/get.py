@@ -5,18 +5,17 @@ grammar in tools/refs.py - the same grammar the corpus uses in `see_also:` and
 `targets:` frontmatter.
 
 `render_ref()` is the single renderer for every doc body this server returns.
-playbook_start composes it rather than re-implementing it, so a guardrails block,
-a workflow body or a requirement bundle is the same bytes wherever it appears.
+playbook_start composes it rather than re-implementing it, so a guardrails block
+is the same bytes wherever it appears.
 """
 
 from __future__ import annotations
 
 import logging
-import re
 
 from mcp.types import TextContent, Tool
 
-from loader import RuleDoc, RulesStore, resolve_rules_root
+from loader import RulesStore, resolve_rules_root
 from refs import REF_KINDS, Ref, RefError, parse_ref, relative_path
 from search import RulesSearchEngine
 
@@ -24,12 +23,9 @@ from .common import (
     PROJECT_PARAM_DESC,
     fail,
     get_doc,
-    meta_str,
     next_calls_section,
     resolve_project,
-    summary,
     text,
-    title,
 )
 
 logger = logging.getLogger(__name__)
@@ -39,9 +35,9 @@ DEFINITIONS: list[Tool] = [
         name="playbook_get",
         description=(
             "Fetch one doc by `ref`. A ref is the same string the corpus uses "
-            'in see_also:/targets: frontmatter - "guardrails", '
-            '"pattern:repository", "language:kotlin/testing", "workflow:bug-fix", '
-            '"req:ST-101" - so a Next Calls bullet can be followed verbatim. '
+            'in see_also: frontmatter - "guardrails", "pattern:repository", '
+            '"language:kotlin/testing", "workflow:bug-fix" - so a Next Calls '
+            "bullet can be followed verbatim. "
             "Returns the doc body plus its own Next Calls. To discover refs, "
             "use playbook_find."
         ),
@@ -59,7 +55,7 @@ DEFINITIONS: list[Tool] = [
                         "guardrails, architecture, gate. `kind:name` otherwise: "
                         "architecture:<adr>, language:<lang>[/standards|testing|"
                         "anti-patterns], pattern:<name>, skill:<name>, "
-                        "workflow:<name>, gate:<script>, req:<PRD-001|ST-101>. "
+                        "workflow:<name>, gate:<script>. "
                         f"Kinds: {', '.join(REF_KINDS)}."
                     ),
                 },
@@ -71,98 +67,13 @@ DEFINITIONS: list[Tool] = [
 
 _NAMES = {t.name for t in DEFINITIONS}
 
-_SECTION_RE = re.compile(r"^##\s+(.+?)\s*$", re.MULTILINE)
-
 
 class DocNotFound(Exception):
     """A ref parsed cleanly but names no doc on disk."""
 
 
 # ---------------------------------------------------------------------------
-# Requirement rendering (shared with playbook_start)
-# ---------------------------------------------------------------------------
-
-
-def _extract_sections(content: str, headings: list[str]) -> str:
-    """Return named ## sections from content (case-insensitive heading match)."""
-    wanted = {h.lower() for h in headings}
-    parts = _SECTION_RE.split(content)
-    out: list[str] = []
-    i = 1
-    while i + 1 < len(parts):
-        heading, body = parts[i], parts[i + 1]
-        if heading.strip().lower() in wanted:
-            out.append(f"## {heading.strip()}\n\n{body.strip()}")
-        i += 2
-    return "\n\n".join(out)
-
-
-def prd_summary(prd: RuleDoc) -> str:
-    sections = _extract_sections(prd.content, ["Problem", "Non-Goals"])
-    return (
-        f"### Parent PRD: `{prd.name}` - {title(prd)} ({meta_str(prd, 'status', 'draft')})\n\n"
-        f"_Description:_ {summary(prd, 160)}\n\n"
-        + (sections if sections else "_(no Problem / Non-Goals sections)_")
-    )
-
-
-def find_requirement(store: RulesStore, req_id: str, project: str | None) -> RuleDoc | None:
-    req_id = req_id.strip()
-    projects = [project] if project else list(store.projects(corpus="requirements"))
-    for p in projects:
-        doc = store.find_by_id("requirements", p, req_id)
-        if doc:
-            return doc
-    return None
-
-
-def _render_requirement(store: RulesStore, project: str, ref: Ref) -> tuple[str, RuleDoc]:
-    """A PRD with its story list, or a story with its parent PRD summary.
-
-    There is no `depth` switch: the related context is always what the caller
-    wants, and pre-0.8.0 `start_task(requirement=)` already included it
-    unconditionally while `get_doc` defaulted it off.
-    """
-    doc = find_requirement(store, ref.name, project) or find_requirement(store, ref.name, None)
-    if not doc:
-        raise DocNotFound(
-            f"Requirement '{ref.name}' not found in '{project}'. "
-            f'Call playbook_find(project="{project}", corpus="requirements") '
-            "to see what exists."
-        )
-
-    parts: list[str] = [
-        f"# {doc.name} - {title(doc)}\n\n"
-        f"_Status:_ {meta_str(doc, 'status', 'draft')}  \n"
-        f"_Path:_ `{doc.project}/{doc.relative_path}`\n\n" + doc.content.strip()
-    ]
-
-    if doc.doc_type == "prd":
-        stories = store.stories_of(doc)
-        if stories:
-            lines = [
-                f"- **{s.name}** ({meta_str(s, 'status', 'draft')}"
-                f"{(' · ' + meta_str(s, 'priority')) if meta_str(s, 'priority') else ''})"
-                f" - {title(s)}"
-                for s in stories
-            ]
-            parts.append("## Stories\n\n" + "\n".join(lines))
-        else:
-            parts.append("## Stories\n\n_No stories yet._")
-    elif doc.doc_type == "story":
-        prd = store.prd_of(doc)
-        if prd:
-            parts.append("## Parent PRD (summary)\n\n" + prd_summary(prd))
-
-    next_calls = next_calls_section(doc, doc.project, key="targets").lstrip("\n")
-    if next_calls:
-        parts.append(next_calls)
-
-    return "\n\n".join(parts) + "\n", doc
-
-
-# ---------------------------------------------------------------------------
-# Standards rendering
+# Doc rendering
 # ---------------------------------------------------------------------------
 
 
@@ -243,14 +154,6 @@ def render_ref(store: RulesStore, project: str, ref: Ref, ctx: object | None = N
     Every doc body this server emits comes through here - playbook_get returns
     it directly and playbook_start embeds it.
     """
-    if ref.kind == "req":
-        body, doc = _render_requirement(store, project, ref)
-        if ctx is not None:
-            ctx.doc_path = f"{doc.corpus}/{doc.project}/{doc.relative_path}"
-            ctx.requirement_id = doc.name
-            ctx.corpus = "requirements"
-        return body
-
     if ref.kind == "guardrails":
         if ctx is not None:
             ctx.doc_path = f"{project}/core/guardrails.md+definition-of-done.md"
@@ -298,11 +201,7 @@ async def dispatch(
     except RefError as exc:
         return fail(ctx, "error", str(exc))
 
-    resolution = resolve_project(store, arguments.get("project"), corpus=ref.corpus)
-    if not resolution.ok and ref.corpus == "requirements":
-        # Requirement ids live under requirements/ but agents pass the standards
-        # project name (they are the same slug).
-        resolution = resolve_project(store, arguments.get("project"), corpus="standards")
+    resolution = resolve_project(store, arguments.get("project"))
     if not resolution.ok:
         return fail(ctx, resolution.status, resolution.error_text or "Project not found.")
     project = resolution.project

@@ -10,7 +10,6 @@
   var PAGES = [
     { label: "Dashboard", hint: "page", href: "/dashboard/" },
     { label: "Standards", hint: "page", href: "/dashboard/projects" },
-    { label: "Requirements", hint: "page", href: "/dashboard/requirements" },
     { label: "Users & adoption", hint: "page", href: "/dashboard/users" },
     { label: "Tokens", hint: "page", href: "/dashboard/tokens" },
     { label: "Setup", hint: "page", href: "/dashboard/setup" },
@@ -43,7 +42,7 @@
       } });
     }
     if (data && data.is_admin) {
-      actions.push({ label: "Reload requirements corpus", hint: "action", run: function () {
+      actions.push({ label: "Reload standards corpus", hint: "action", run: function () {
         var form = document.createElement("form");
         form.method = "post";
         form.action = "/dashboard/reload";
@@ -67,9 +66,6 @@
     if (data) {
       (data.projects || []).forEach(function (p) {
         items.push({ label: p, hint: "standards project", href: "/dashboard/projects/" + encodeURIComponent(p) });
-      });
-      (data.requirement_projects || []).forEach(function (p) {
-        items.push({ label: p, hint: "requirements project", href: "/dashboard/requirements/" + encodeURIComponent(p) });
       });
       (data.users || []).forEach(function (u) {
         items.push({ label: u, hint: "user", href: "/dashboard/users/" + encodeURIComponent(u) });

@@ -77,7 +77,6 @@ def test_infer_doc_type_alias() -> None:
         ("apache-camel/patterns/foo.md", False),
         ("apache-camel/INDEX.md", False),
         ("standards/", True),
-        ("requirements/", True),
     ],
 )
 def test_is_excluded(rel: str, expected: bool) -> None:

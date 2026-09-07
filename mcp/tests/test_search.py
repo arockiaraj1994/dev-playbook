@@ -97,33 +97,33 @@ def test_search_empty_query() -> None:
 def test_search_filter_before_truncate(tmp_rules_root: Path) -> None:
     """Filtered search must not under-return: filter BEFORE top_k truncate.
 
-    Regression guard for the corpus/project/doc_type filter path.
+    Regression guard for the project/doc_type filter path.
     """
     store = load_store(tmp_rules_root)
     engine = RulesSearchEngine(store)
     # Broad query that hits many docs; restrict to pattern and ask for many.
-    all_patterns = engine.search("proj", doc_type="pattern", top_k=50, corpus="standards")
+    all_patterns = engine.search("proj", doc_type="pattern", top_k=50)
     assert all_patterns, "expected pattern hits"
     for r in all_patterns:
         assert r.doc_type == "pattern"
     # top_k smaller than the unfiltered corpus must still return only patterns
-    limited = engine.search("proj", doc_type="pattern", top_k=1, corpus="standards")
+    limited = engine.search("proj", doc_type="pattern", top_k=1)
     assert len(limited) == 1
     assert limited[0].doc_type == "pattern"
 
 
-def test_search_corpus_field_on_results(tmp_rules_root: Path) -> None:
+def test_search_results_carry_project_and_type(tmp_rules_root: Path) -> None:
     store = load_store(tmp_rules_root)
     engine = RulesSearchEngine(store)
-    results = engine.search("guardrails", top_k=5, corpus="standards")
+    results = engine.search("guardrails", top_k=5)
     assert results
     for r in results:
-        assert r.corpus == "standards"
+        assert r.project and r.doc_type
 
 
 def test_search_includes_heading_in_result(tmp_rules_root: Path) -> None:
     store = load_store(tmp_rules_root)
     engine = RulesSearchEngine(store)
-    results = engine.search("DLQ flows", top_k=5, corpus="standards")
+    results = engine.search("DLQ flows", top_k=5)
     assert results
     assert any(r.heading for r in results)

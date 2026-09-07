@@ -18,7 +18,6 @@ already speaks in `see_also:` / `targets:` frontmatter:
     workflow:<name>             workflows/<name>.md
     gate                        gates/README.md
     gate:<script>               gates/scripts/<script>.sh
-    req:<id>                    a PRD or story in the requirements corpus
 
 Before v0.8.0 this grammar existed only in frontmatter and had to be translated
 into `kind=` / `name=` / `section=` / `depth=` arguments by a ~100-line switch.
@@ -43,7 +42,6 @@ REF_KINDS: tuple[str, ...] = (
     "skill",
     "workflow",
     "gate",
-    "req",
 )
 
 # Kinds that never take a name.
@@ -51,7 +49,7 @@ _SINGLETON_KINDS = frozenset({"agents", "guardrails"})
 # Kinds where a name is optional (bare ref selects the overview / README).
 _OPTIONAL_NAME_KINDS = frozenset({"architecture", "gate"})
 # Kinds that require a name.
-_REQUIRED_NAME_KINDS = frozenset({"language", "pattern", "skill", "workflow", "req"})
+_REQUIRED_NAME_KINDS = frozenset({"language", "pattern", "skill", "workflow"})
 
 LANGUAGE_SECTIONS: tuple[str, ...] = ("standards", "testing", "anti-patterns")
 
@@ -60,7 +58,6 @@ LANGUAGE_SECTIONS: tuple[str, ...] = ("standards", "testing", "anti-patterns")
 # were never part of the v0.8.0 tool-name break.
 _KIND_ALIASES: dict[str, str] = {
     "gates": "gate",
-    "requirement": "req",
     "core": "guardrails",
 }
 
@@ -91,10 +88,6 @@ class Ref:
         return self.kind
 
     @property
-    def corpus(self) -> str:
-        return "requirements" if self.kind == "req" else "standards"
-
-    @property
     def label(self) -> str:
         """Short human label used in Next Calls bullets."""
         if self.kind == "agents":
@@ -107,8 +100,6 @@ class Ref:
             return f"{self.name} {self.section}"
         if self.kind == "gate":
             return f"gate `{self.name}`" if self.name else "gate README"
-        if self.kind == "req":
-            return f"requirement `{self.name}`"
         return f"{self.kind} `{self.name}`"
 
 
@@ -118,7 +109,7 @@ def parse_ref(raw: str) -> Ref:
     if not text:
         raise RefError(
             '`ref` is required. It names one doc, e.g. "guardrails", '
-            '"pattern:repository", "language:kotlin/testing", "req:ST-101". '
+            '"pattern:repository", "language:kotlin/testing". '
             f"Kinds: {', '.join(REF_KINDS)}."
         )
 
@@ -179,7 +170,6 @@ def _example_name(kind: str) -> str:
         "pattern": "repository",
         "skill": "add-screen",
         "workflow": "bug-fix",
-        "req": "ST-101",
     }.get(kind, "<name>")
 
 
@@ -209,7 +199,7 @@ def relative_path(ref: Ref) -> str | None:
         return f"workflows/{ref.name}.md"
     if ref.kind == "gate":
         return "gates/README.md"
-    # guardrails (two docs) and req (id lookup) have no single static path.
+    # guardrails spans two docs, so it has no single static path.
     return None
 
 

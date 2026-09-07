@@ -1647,7 +1647,7 @@ html, body { overflow-x: hidden; }
 }
 .project-row-meta strong { color: var(--text); font-weight: 600; }
 
-/* Status pill color variants (standards / requirements lists) */
+/* Status pill color variants (standards lists) */
 .status-pill-green { background: var(--green-50);  color: var(--green-700); border-color: var(--green-100); text-transform: uppercase; font-size: 10px; letter-spacing: 0.04em; font-weight: 600; padding: 1px 6px; }
 .status-pill-amber { background: var(--amber-50);  color: var(--amber-700); border-color: var(--amber-100); text-transform: uppercase; font-size: 10px; letter-spacing: 0.04em; font-weight: 600; padding: 1px 6px; }
 .status-pill-red   { background: var(--red-50);    color: var(--red-700);   border-color: var(--red-100); text-transform: uppercase; font-size: 10px; letter-spacing: 0.04em; font-weight: 600; padding: 1px 6px; }

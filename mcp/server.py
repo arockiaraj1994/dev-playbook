@@ -6,10 +6,9 @@ Tools (3, all read-only, playbook_ namespaced):
                     matched workflow + next calls (+ optional ref="req:ST-101").
                     mode=prd|story: the authoring bootstrap.
  - playbook_get   - fetch one doc by ref= ("guardrails", "pattern:repository",
-                    "language:kotlin/testing", "workflow:bug-fix", "req:ST-101") -
-                    the same grammar the corpus uses in see_also:/targets:.
- - playbook_find  - list docs (no query) or search (with query);
-                    type=/status=/prd=/corpus= filters.
+                    "language:kotlin/testing", "workflow:bug-fix") - the same
+                    grammar the corpus uses in see_also:.
+ - playbook_find  - list docs (no query) or search (with query); type= filter.
 
 Run:
   uv run server.py
@@ -35,10 +34,8 @@ Other env vars:
   MCP_ADMIN_USER - override default admin username (default: admin)
   MCP_ADMIN_PASSWORD - override default admin password (default: admin)
   MCP_STANDARDS_ROOT - standards corpus root (default <repo>/standards)
-  MCP_REQUIREMENTS_ROOT - requirements corpus root (default <repo>/requirements)
-  MCP_REQUIREMENTS_TTL - requirements reload TTL seconds (default 300)
 
-Standards load from standards/; requirements from requirements/ (TTL-cached).
+Docs load from standards/ at boot; POST /dashboard/reload picks up edits.
 """
 
 from __future__ import annotations
@@ -70,7 +67,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 from auth import AuthStore
 from cache import CorpusCache
-from corpus import requirements_spec, standards_spec
+from corpus import standards_spec
 from dashboard.auth_routes import build_auth_routes
 from dashboard.routes import build_dashboard_routes
 from identity import (
@@ -102,24 +99,24 @@ logging.basicConfig(
 logger = logging.getLogger("dev-playbook")
 
 SERVER_LABEL = os.getenv("MCP_SERVER_LABEL", "dev-playbook")
-SERVER_VERSION = "0.8.0"
+SERVER_VERSION = "0.9.0"
 DEFAULT_PORT = 3000
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_INACTIVE_DAYS = 2
 _DEFAULT_DB_REL = Path("data") / "metrics.db"
 
 # ---------------------------------------------------------------------------
-# Startup - load both corpora + index
+# Startup - load the corpus + index
 # ---------------------------------------------------------------------------
 
-logger.info("Bootstrapping standards + requirements stores...")
+logger.info("Bootstrapping standards store...")
 try:
     store: DocStore = bootstrap_all()
 except FileNotFoundError as e:
     logger.error("%s", e)
     sys.exit(1)
 
-if not store.all_docs(corpus="standards"):
+if not store.all_docs():
     root = resolve_rules_root()
     found_subdirs = (
         sorted(p.name for p in root.iterdir() if p.is_dir() and not p.name.startswith("."))
@@ -135,29 +132,20 @@ if not store.all_docs(corpus="standards"):
     sys.exit(1)
 
 standards_cache = CorpusCache(standards_spec())
-standards_cache.load_sync()  # already loaded via bootstrap_all; sync snapshot
-# Prefer the docs already in `store` for standards; keep cache for policy symmetry.
-standards_cache._docs = store.all_docs(corpus="standards")  # noqa: SLF001
-
-requirements_cache = CorpusCache(requirements_spec())
+# Docs are already in `store` from bootstrap_all; hand the same list to the
+# cache rather than parsing the tree twice.
+standards_cache._docs = store.all_docs()  # noqa: SLF001
 
 
-def _on_requirements_reload(_name: str, fresh: list) -> None:
-    store.replace_corpus("requirements", fresh)
+def _on_standards_reload(_name: str, fresh: list) -> None:
+    store.replace_all(fresh)
     engine.rebuild(store)
 
 
-requirements_cache._on_reload = _on_requirements_reload  # noqa: SLF001
-requirements_cache.load_sync()
-# Ensure store has the TTL-cache snapshot (same docs if root empty/identical).
-store.replace_corpus("requirements", requirements_cache.snapshot())
+standards_cache._on_reload = _on_standards_reload  # noqa: SLF001
 
 engine: RulesSearchEngine = RulesSearchEngine(store)
-logger.info(
-    "Ready. Standards projects: %s | Requirements projects: %s",
-    store.projects(corpus="standards"),
-    store.projects(corpus="requirements"),
-)
+logger.info("Ready. Projects: %s", store.projects())
 
 # Set by build_app(). The MCP `Server` is module-scoped, so dispatch_tool /
 # _record_call (also module-scoped) read this through the module global rather
@@ -197,20 +185,9 @@ class _CallContext:
     doc_path: str | None = None
     top_result_path: str | None = None
     top_result_score: float | None = None
-    requirement_id: str | None = None
-    corpus: str | None = None
-
-
-async def _maybe_reload_requirements() -> None:
-    """TTL-refresh requirements and rebuild BM25 if the corpus swapped."""
-    before = id(requirements_cache.snapshot())
-    fresh = await requirements_cache.docs()
-    # CorpusCache calls on_reload only on actual reload; if TTL hit, no-op.
-    _ = before, fresh
 
 
 async def _dispatch_typed(name: str, arguments: dict, ctx: _CallContext) -> list[TextContent]:
-    await _maybe_reload_requirements()
     for mod in _TOOL_MODULES:
         result = await mod.dispatch(name, arguments, ctx, store, engine)
         if result is not None:
@@ -262,8 +239,6 @@ async def _record_call(name: str, args_summary: str, latency_ms: int, ctx: _Call
             doc_path=ctx.doc_path,
             top_result_path=ctx.top_result_path,
             top_result_score=ctx.top_result_score,
-            requirement_id=ctx.requirement_id,
-            corpus=ctx.corpus,
         )
     except Exception:  # noqa: BLE001
         logger.exception("Failed to record call metrics")
@@ -719,7 +694,7 @@ def build_app(deps: AppDeps) -> Starlette:
                 auth_enabled=deps.cfg.auth_enabled,
                 rules_store=store,
                 rules_root=resolve_rules_root(),
-                requirements_cache=requirements_cache,
+                standards_cache=standards_cache,
             ),
         ),
         Route("/", endpoint=_root_redirect, methods=["GET"]),

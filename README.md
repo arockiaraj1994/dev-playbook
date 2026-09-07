@@ -100,8 +100,8 @@ ports:
   - "0.0.0.0:${MCP_PORT:-3001}:3000"   # then a weak password is not OK
 ```
 
-`standards/` and `requirements/` are bind-mounted **read-only**, so rule authors
-edit markdown on the host and the server serves it.
+`standards/` is bind-mounted **read-only**, so rule authors edit markdown on the
+host and the server serves it.
 
 #### Starting, stopping, restarting
 
@@ -131,8 +131,7 @@ deliberately does *not* resurrect something you stopped on purpose).
 
 | You changed | Do this | Why |
 |---|---|---|
-| A doc under `requirements/` | nothing | TTL-reloaded (`MCP_REQUIREMENTS_TTL`, default 300s) |
-| A doc under `standards/` | `docker compose restart` | the standards corpus is cached at boot |
+| A doc under `standards/` | `docker compose restart`, or the dashboard's **Reload corpus** button | the corpus is cached at boot |
 | `.env` (port, label, TTL) | `docker compose up -d` | recreates the container with the new environment |
 | Python code or `Dockerfile` | `docker compose up -d --build` | the image has to be rebuilt |
 | `MCP_ADMIN_PASSWORD` | `docker compose down -v && docker compose up -d` | see the warning below |
@@ -164,10 +163,8 @@ curl -s -X POST http://localhost:3001/auth/login \
 
 ## Adding a project
 
-A **standards** project is a directory under `standards/` that holds HOW-to-build
-rule docs for one codebase. A **requirements** project under `requirements/`
-holds WHAT-to-build PRDs and stories. The server loads both corpora at startup
-(requirements are TTL-reloaded).
+A project is a directory under `standards/` that holds the rule docs for one
+codebase. The server loads them at startup.
 
 ### Step 1 - Create the project directory
 
@@ -207,9 +204,8 @@ standards/<your-project>/
 Legacy layout with projects next to `mcp/` is deprecated (2-release shim).
 Prefer `standards/` or set `MCP_STANDARDS_ROOT`.
 
-Use `TEMPLATE.md` for copy-pasteable starters and look at `standards/apache-camel/` or
-`standards/nexre/` for live examples. Product requirements live under
-`requirements/<project>/`.
+Use `TEMPLATE.md` for copy-pasteable starters and look at `standards/nexre/`
+for a live example.
 
 ### Step 2 - Write `AGENTS.md` first
 
@@ -275,9 +271,9 @@ and chain forward from there. The contract:
 
 | Tool | When to call |
 |---|---|
-| `playbook_start(project, intent, mode?, ref?)` | **The entry point - first call, always.** Returns identity + guardrails + optional requirement + matched workflow + `Next Calls`. `mode="prd"` or `"story"` switches to the authoring bootstrap (template + context + next id). |
-| `playbook_get(project, ref)` | Fetch any standards or requirement doc by `ref`. |
-| `playbook_find(project, query?, type?, status?, prd?, corpus?)` | Discovery. Omit `query` to list every doc with its trigger phrases; pass `query` to search. |
+| `playbook_start(project, intent)` | **The entry point - first call, always.** Returns identity + guardrails + definition of done + matched workflow + `Next Calls`. |
+| `playbook_get(project, ref)` | Fetch any doc by `ref`. |
+| `playbook_find(project, query?, type?)` | Discovery. Omit `query` to list every doc with its trigger phrases; pass `query` to search. |
 
 `project` is always the basename of the user's workspace directory. All three
 tools are read-only and annotated as such (`readOnlyHint`), so clients can
@@ -296,7 +292,6 @@ A `ref` is exactly the string the corpus already uses in `see_also:` /
 | `language:<lang>`, `language:<lang>/testing` | `languages/<lang>/<section>.md` (`standards` by default) |
 | `pattern:<name>`, `skill:<name>`, `workflow:<name>` | that doc |
 | `gate`, `gate:<script>` | the gate README, or one script (shown, never executed) |
-| `req:<id>` | a PRD (with its story list) or a story (with its parent PRD summary) |
 
 Every doc response ends with a `## Next Calls` block generated from that
 doc's `see_also:` / `targets:` frontmatter, naming the exact `playbook_get(...)`
@@ -306,10 +301,10 @@ agent - which is why `AGENTS.md` declares `tool:playbook_start`.
 ### Sample prompts
 
 ```
-Add a new SFTP inbound route for payments to the apache-camel project.
-I need to fix a bug where the orders route is dropping messages.
-We have a CVE on Quarkus in apache-camel - patch it.
-Refactor the invoice processor without changing behavior.
+Add offline sync for saved articles to the nexre project.
+I need to fix a bug where the reader drops scroll position.
+We have a CVE in a Room dependency on nexre - patch it.
+Refactor the link repository without changing behavior.
 ```
 
 The agent will call `playbook_start` first, then chain through the next calls
@@ -397,8 +392,6 @@ the bundle returns.
 | `MCP_ADMIN_USER` | `admin` | Default admin username (seeded on first boot). |
 | `MCP_ADMIN_PASSWORD` | `admin` | Default admin password. **Required** (non-default) when `MCP_HOST=0.0.0.0`. |
 | `MCP_STANDARDS_ROOT` | `<repo>/standards` | Standards corpus root. |
-| `MCP_REQUIREMENTS_ROOT` | `<repo>/requirements` | Requirements corpus root. |
-| `MCP_REQUIREMENTS_TTL` | `300` | Seconds between requirements corpus reloads. |
 
 ## `mcp/config.toml`
 

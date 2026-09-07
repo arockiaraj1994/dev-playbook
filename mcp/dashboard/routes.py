@@ -107,7 +107,7 @@ def build_dashboard_routes(
     auth_enabled: bool = False,
     rules_store: RulesStore | None = None,
     rules_root: Path | None = None,
-    requirements_cache: object | None = None,
+    standards_cache: object | None = None,
 ) -> list[BaseRoute]:
     templates = _build_templates()
 
@@ -322,26 +322,20 @@ def build_dashboard_routes(
         principal = scope_principal(request.scope)
         is_admin = principal is not None and getattr(principal, "role", "user") == "admin"
         projects: list[str] = []
-        req_projects: list[str] = []
         if rules_store is not None:
-            try:
-                projects = list(rules_store.projects(corpus="standards"))
-                req_projects = list(rules_store.projects(corpus="requirements"))
-            except TypeError:
-                projects = list(rules_store.projects())
+            projects = list(rules_store.projects())
         users = await store.list_users(inactive_days=inactive_days)
         base = str(request.base_url).rstrip("/")
         return JSONResponse(
             {
                 "projects": projects,
-                "requirement_projects": req_projects,
                 "users": [u.user_name for u in users][:50],
                 "sse_url": f"{base}/sse",
                 "is_admin": is_admin,
             }
         )
 
-    # -- Standards + Requirements (corpus health) ----------------------------
+    # -- Standards (corpus health) -------------------------------------------
 
     def _score_all_projects() -> list:
         """Score every standards project. Returns ProjectStatus list."""
@@ -358,7 +352,6 @@ def build_dashboard_routes(
 
     async def projects_view(request: Request) -> Response:
         statuses = _score_all_projects()
-        linked = await store.requirement_linked_rate(window_days=30)
         return templates.TemplateResponse(
             request,
             "projects.html",
@@ -367,202 +360,11 @@ def build_dashboard_routes(
                 page="projects",
                 projects=statuses,
                 rules_loaded=rules_store is not None,
-                requirement_linked_pct=linked,
-                corpus="standards",
             ),
         )
 
-    async def requirements_view(request: Request) -> Response:
-        prd_rows = _requirement_rows()
-        projects = _requirement_project_rows(prd_rows)
-        linked = await store.requirement_linked_rate(window_days=30)
-        return templates.TemplateResponse(
-            request,
-            "requirements.html",
-            _ctx(
-                request,
-                page="requirements",
-                projects=projects,
-                rules_loaded=rules_store is not None,
-                requirement_linked_pct=linked,
-            ),
-        )
-
-    async def requirement_detail_view(request: Request) -> Response:
-        name = request.path_params.get("name", "")
-        if rules_store is None:
-            return HTMLResponse("<p>Rules store unavailable.</p>", status_code=503)
-        known = (
-            rules_store.projects(corpus="requirements") if hasattr(rules_store, "projects") else []
-        )
-        if name not in known:
-            return HTMLResponse(
-                f"<p>Requirements project <code>{name}</code> not found.</p>",
-                status_code=404,
-            )
-        prd_rows = [r for r in _requirement_rows() if r["project"] == name]
-        # Project-level indicator: worst of its PRDs.
-        if any(r["indicator"] == "red" for r in prd_rows):
-            indicator = "red"
-        elif any(r["indicator"] == "amber" for r in prd_rows):
-            indicator = "amber"
-        else:
-            indicator = "green"
-        return templates.TemplateResponse(
-            request,
-            "requirement_detail.html",
-            _ctx(
-                request,
-                page="requirements",
-                project=name,
-                prds=prd_rows,
-                indicator=indicator,
-            ),
-        )
-
-    def _requirement_project_rows(prd_rows: list[dict]) -> list[dict]:
-        """Aggregate per-PRD rows into Standards-style per-project rows."""
-        by_project: dict[str, list[dict]] = {}
-        for row in prd_rows:
-            by_project.setdefault(row["project"], []).append(row)
-
-        # Also surface requirements projects that have no PRDs yet.
-        if rules_store is not None and hasattr(rules_store, "projects"):
-            for name in rules_store.projects(corpus="requirements"):
-                by_project.setdefault(name, [])
-
-        out: list[dict] = []
-        for project in sorted(by_project):
-            rows = by_project[project]
-            counts = {"red": 0, "amber": 0, "green": 0}
-            story_total = 0
-            targets_ok = 0
-            targets_n = 0
-            for r in rows:
-                counts[r["indicator"]] = counts.get(r["indicator"], 0) + 1
-                story_total += int(r.get("story_total") or 0)
-                # Weight coverage by stories that declared targets.
-                cov = int(r.get("targets_coverage") or 0)
-                st = int(r.get("story_total") or 0)
-                if st:
-                    targets_n += st
-                    targets_ok += round(st * cov / 100)
-            if counts["red"]:
-                indicator = "red"
-            elif counts["amber"]:
-                indicator = "amber"
-            else:
-                indicator = "green"
-            coverage = round(100 * targets_ok / targets_n) if targets_n else 0
-            out.append(
-                {
-                    "project": project,
-                    "prd_total": len(rows),
-                    "story_total": story_total,
-                    "counts": counts,
-                    "indicator": indicator,
-                    "targets_coverage": coverage,
-                }
-            )
-        return out
-
-    def _requirement_rows() -> list[dict]:
-        if rules_store is None:
-            return []
-        from requirement_rules import validate_requirement_docs
-
-        prds = [d for d in rules_store.all_docs(corpus="requirements") if d.doc_type == "prd"]
-        standards = rules_store.all_docs(corpus="standards")
-        hard, soft = validate_requirement_docs(
-            rules_store.all_docs(corpus="requirements"), standards
-        )
-        issues_by_path: dict[str, list[str]] = {}
-        for _proj, _rule, msg in hard + soft:
-            # msg starts with relative_path:
-            path = msg.split(":", 1)[0].strip()
-            issues_by_path.setdefault(path, []).append(msg)
-
-        rows: list[dict] = []
-        for prd in sorted(prds, key=lambda d: d.name):
-            stories = rules_store.stories_of(prd)
-            status_counts = {"draft": 0, "approved": 0, "shipped": 0}
-            targets_ok = 0
-            targets_total = 0
-            for s in stories:
-                st = s.metadata.get("status") or "draft"
-                if isinstance(st, str) and st in status_counts:
-                    status_counts[st] += 1
-                else:
-                    status_counts["draft"] += 1
-                targets = s.metadata.get("targets") or []
-                if isinstance(targets, list) and targets:
-                    targets_total += 1
-                    # Consider covered if no soft failure mentioning this story path
-                    if not any(
-                        s.relative_path in m
-                        for m in issues_by_path.get(s.relative_path, [])
-                        if "targets" in m
-                    ):
-                        # simpler: count stories with non-empty targets as attempted
-                        targets_ok += 1
-            prd_issues = issues_by_path.get(prd.relative_path, [])
-            story_issues = [m for s in stories for m in issues_by_path.get(s.relative_path, [])]
-            all_issues = prd_issues + story_issues
-            if any(":" in m and m.split(":")[0] for m in all_issues) and any(
-                x[1].startswith("prd.") or x[1].startswith("story.")
-                for x in hard
-                if prd.relative_path in x[2] or any(s.relative_path in x[2] for s in stories)
-            ):
-                indicator = "red"
-            elif all_issues:
-                indicator = "amber"
-            else:
-                indicator = "green"
-
-            # Refine: hard failures → red, soft only → amber
-            has_hard = any(
-                prd.relative_path in x[2] or any(s.relative_path in x[2] for s in stories)
-                for x in hard
-            )
-            has_soft = any(
-                prd.relative_path in x[2] or any(s.relative_path in x[2] for s in stories)
-                for x in soft
-            )
-            if has_hard:
-                indicator = "red"
-            elif has_soft:
-                indicator = "amber"
-            else:
-                indicator = "green"
-
-            coverage = round(100 * targets_ok / targets_total) if targets_total else 0
-            owner = prd.metadata.get("owner") if isinstance(prd.metadata.get("owner"), str) else ""
-            title = (
-                prd.metadata.get("title")
-                if isinstance(prd.metadata.get("title"), str)
-                else prd.name
-            )
-            status = (
-                prd.metadata.get("status")
-                if isinstance(prd.metadata.get("status"), str)
-                else "draft"
-            )
-            rows.append(
-                {
-                    "id": prd.name,
-                    "title": title,
-                    "status": status,
-                    "owner": owner or " - ",
-                    "story_counts": status_counts,
-                    "story_total": len(stories),
-                    "indicator": indicator,
-                    "targets_coverage": coverage,
-                    "project": prd.project,
-                }
-            )
-        return rows
-
-    async def reload_requirements(request: Request) -> Response:
+    async def reload_standards(request: Request) -> Response:
+        """Re-read standards/ without restarting the server."""
         principal = scope_principal(request.scope)
         if principal is None or getattr(principal, "role", "user") != "admin":
             return _forbidden(request)
@@ -570,10 +372,10 @@ def build_dashboard_routes(
         csrf_err = _validate_csrf_or_403(request, form)
         if csrf_err:
             return csrf_err
-        if requirements_cache is None or not hasattr(requirements_cache, "force_reload"):
-            return RedirectResponse("/dashboard/requirements?error=reload", status_code=303)
-        await requirements_cache.force_reload()  # type: ignore[union-attr]
-        return RedirectResponse("/dashboard/requirements?reloaded=1", status_code=303)
+        if standards_cache is None or not hasattr(standards_cache, "force_reload"):
+            return RedirectResponse("/dashboard/projects?error=reload", status_code=303)
+        await standards_cache.force_reload()  # type: ignore[union-attr]
+        return RedirectResponse("/dashboard/projects?reloaded=1", status_code=303)
 
     async def project_detail_view(request: Request) -> Response:
         name = request.path_params.get("name", "")
@@ -758,9 +560,7 @@ def build_dashboard_routes(
         Route("/guide", endpoint=guide_view, methods=["GET"]),
         Route("/projects", endpoint=projects_view, methods=["GET"]),
         Route("/projects/{name}", endpoint=project_detail_view, methods=["GET"]),
-        Route("/requirements", endpoint=requirements_view, methods=["GET"]),
-        Route("/requirements/{name}", endpoint=requirement_detail_view, methods=["GET"]),
-        Route("/reload", endpoint=reload_requirements, methods=["POST"]),
+        Route("/reload", endpoint=reload_standards, methods=["POST"]),
         Route("/api/me/last-call", endpoint=setup_last_call_api, methods=["GET"]),
         Route("/api/palette", endpoint=palette_api, methods=["GET"]),
         Route("/api/summary", endpoint=summary_api, methods=["GET"]),

@@ -1,15 +1,12 @@
 """
-loader.py - Loads markdown docs from a corpus root into memory.
+loader.py - Loads markdown docs from the standards root into memory.
 
 Path-first dispatch: doc_type is inferred from the doc's path inside the
-project directory, not its filename alone. Corpora are described by
+project directory, not its filename alone. The corpus is described by
 CorpusSpec (see corpus.py):
 
     standards/<project>/
       AGENTS.md, INDEX.md, core/, architecture/, languages/, ...
-
-    requirements/<project>/
-      AGENTS.md, INDEX.md, workflows/, PRD-*/prd.md, PRD-*/stories/ST-*.md
 """
 
 from __future__ import annotations
@@ -24,7 +21,6 @@ from corpus import (
     KNOWN_DOC_TYPES,
     CorpusSpec,
     infer_standards_type,
-    requirements_spec,
     standards_spec,
 )
 
@@ -66,7 +62,6 @@ _EXCLUDED_PREFIXES = (
     "scripts/",
     ".venv/",
     "standards/",
-    "requirements/",
     "docs/",
 )
 _EXCLUDED_TOP_LEVEL_FILES = {
@@ -89,8 +84,6 @@ SEE_ALSO_KINDS = (
     "architecture",
     "core",
     "agents",
-    "req",
-    "requirement",  # tolerated alias of `req`
 )
 
 # The v0.8.0 tool surface. Earlier names are NOT accepted in frontmatter -
@@ -118,110 +111,35 @@ class RuleDoc:
     name: str
     content: str
     metadata: dict = field(default_factory=dict)
-    corpus: str = "standards"
 
 
 @dataclass
 class DocStore:
-    """Corpus-aware in-memory document store."""
+    """In-memory document store for the standards corpus."""
 
     docs: list[RuleDoc] = field(default_factory=list)
 
-    def projects(self, corpus: str | None = None) -> list[str]:
-        if corpus is None:
-            return sorted({d.project for d in self.docs})
-        return sorted({d.project for d in self.docs if d.corpus == corpus})
+    def projects(self) -> list[str]:
+        return sorted({d.project for d in self.docs})
 
-    def get(
-        self,
-        project: str,
-        relative_path: str,
-        corpus: str | None = None,
-    ) -> RuleDoc | None:
+    def get(self, project: str, relative_path: str) -> RuleDoc | None:
         for doc in self.docs:
             if doc.project == project and doc.relative_path == relative_path:
-                if corpus is None or doc.corpus == corpus:
-                    return doc
-        return None
-
-    def for_project(self, project: str, corpus: str | None = None) -> list[RuleDoc]:
-        return [
-            d for d in self.docs if d.project == project and (corpus is None or d.corpus == corpus)
-        ]
-
-    def of_type(
-        self,
-        project: str,
-        doc_type: str,
-        corpus: str | None = None,
-    ) -> list[RuleDoc]:
-        return [
-            d
-            for d in self.docs
-            if d.project == project
-            and d.doc_type == doc_type
-            and (corpus is None or d.corpus == corpus)
-        ]
-
-    def all_docs(self, corpus: str | None = None) -> list[RuleDoc]:
-        if corpus is None:
-            return list(self.docs)
-        return [d for d in self.docs if d.corpus == corpus]
-
-    def find_by_id(
-        self,
-        corpus: str,
-        project: str,
-        req_id: str,
-    ) -> RuleDoc | None:
-        """Look up a PRD or story by frontmatter id (e.g. PRD-003 / ST-114)."""
-        req_id = req_id.strip()
-        for doc in self.docs:
-            if doc.corpus != corpus or doc.project != project:
-                continue
-            if doc.doc_type not in ("prd", "story"):
-                continue
-            meta_id = doc.metadata.get("id")
-            if isinstance(meta_id, str) and meta_id.strip() == req_id:
-                return doc
-            if doc.name == req_id:
                 return doc
         return None
 
-    def stories_of(self, prd: RuleDoc) -> list[RuleDoc]:
-        """Stories under the same PRD folder (path siblings)."""
-        if prd.doc_type != "prd":
-            return []
-        # relative_path like PRD-003-offline-sync/prd.md
-        folder = Path(prd.relative_path).parent.as_posix()
-        prefix = f"{folder}/stories/"
-        return sorted(
-            [
-                d
-                for d in self.docs
-                if d.corpus == prd.corpus
-                and d.project == prd.project
-                and d.doc_type == "story"
-                and d.relative_path.startswith(prefix)
-            ],
-            key=lambda d: d.name,
-        )
+    def for_project(self, project: str) -> list[RuleDoc]:
+        return [d for d in self.docs if d.project == project]
 
-    def prd_of(self, story: RuleDoc) -> RuleDoc | None:
-        """Parent PRD via path arithmetic: ../../prd.md from stories/."""
-        if story.doc_type != "story":
-            return None
-        # PRD-003-offline-sync/stories/ST-114-*.md → PRD-003-offline-sync/prd.md
-        parts = Path(story.relative_path).parts
-        if len(parts) < 3:
-            return None
-        prd_rel = f"{parts[0]}/prd.md"
-        return self.get(story.project, prd_rel, corpus=story.corpus)
+    def of_type(self, project: str, doc_type: str) -> list[RuleDoc]:
+        return [d for d in self.docs if d.project == project and d.doc_type == doc_type]
 
-    def replace_corpus(self, corpus: str, fresh: list[RuleDoc]) -> None:
-        """Atomic swap of one corpus's docs (used by TTL cache)."""
-        others = [d for d in self.docs if d.corpus != corpus]
-        self.docs = others + fresh
+    def all_docs(self) -> list[RuleDoc]:
+        return list(self.docs)
+
+    def replace_all(self, fresh: list[RuleDoc]) -> None:
+        """Atomic swap of the whole corpus (used by the manual reload)."""
+        self.docs = fresh
 
 
 # Back-compat alias
@@ -392,11 +310,6 @@ def parse_corpus(spec: CorpusSpec) -> list[RuleDoc]:
 
         metadata, body = _parse_frontmatter(raw_content)
 
-        # Prefer frontmatter id for PRD/story names
-        meta_id = metadata.get("id")
-        if isinstance(meta_id, str) and meta_id.strip() and doc_type in ("prd", "story"):
-            name = meta_id.strip()
-
         if doc_type == "language-rules":
             lang_parts = Path(doc_relative).parts
             if len(lang_parts) >= 2 and lang_parts[0] == "languages":
@@ -418,7 +331,6 @@ def parse_corpus(spec: CorpusSpec) -> list[RuleDoc]:
 
         docs.append(
             RuleDoc(
-                corpus=spec.name,
                 project=project,
                 relative_path=doc_relative,
                 doc_type=doc_type,
@@ -437,12 +349,7 @@ def _parse_docs(repo_root: Path) -> list[RuleDoc]:
 
     Used by tests and the validator when pointing at an explicit root.
     """
-    spec = CorpusSpec(
-        name="standards",
-        root=repo_root,
-        cache_policy="boot",
-        infer=infer_standards_type,
-    )
+    spec = CorpusSpec(name="standards", root=repo_root, infer=infer_standards_type)
     return parse_corpus(spec)
 
 
@@ -492,31 +399,16 @@ def resolve_rules_root() -> Path:
     return resolve_standards_root()
 
 
-def load_store(repo_root: Path, *, corpus: str = "standards") -> DocStore:
-    """Load docs from an explicit root as the given corpus name."""
-    if corpus == "requirements":
-        infer = requirements_spec().infer
-    else:
-        infer = infer_standards_type
-    spec = CorpusSpec(
-        name=corpus,
-        root=repo_root,
-        cache_policy="boot",
-        infer=infer,
-    )
+def load_store(repo_root: Path) -> DocStore:
+    """Load docs from an explicit root (used by tests and the validator)."""
+    spec = CorpusSpec(name="standards", root=repo_root, infer=infer_standards_type)
     docs = parse_corpus(spec)
-    logger.info("Loaded %d %s docs from %s.", len(docs), corpus, repo_root)
+    logger.info("Loaded %d docs from %s.", len(docs), repo_root)
     return DocStore(docs=docs)
 
 
 def bootstrap_all() -> DocStore:
-    """Load both standards and requirements into one DocStore."""
-    std = parse_corpus(standards_spec())
-    req_spec = requirements_spec()
-    req = parse_corpus(req_spec) if req_spec.root.is_dir() else []
-    logger.info(
-        "Loaded %d standards + %d requirements docs.",
-        len(std),
-        len(req),
-    )
-    return DocStore(docs=std + req)
+    """Load the standards corpus into a DocStore."""
+    docs = parse_corpus(standards_spec())
+    logger.info("Loaded %d standards docs.", len(docs))
+    return DocStore(docs=docs)

@@ -12,7 +12,7 @@ This guide covers both. For copy-pasteable doc skeletons, see [`TEMPLATE.md`](TE
 ## Adding a new project ruleset
 
 Create a directory next to `mcp/`. The validator enforces the full layout - 
-copy from `standards/apache-camel/` for a known-good baseline.
+copy from `standards/nexre/` for a known-good baseline.
 
 ```
 my-project/
@@ -100,7 +100,7 @@ The MCP loader reads frontmatter when present and falls back to the H1 otherwise
 title: Quarkus pattern for Karavan
 description: Canonical Quarkus structure - REST resources, services, CDI scopes.
 tags: [quarkus, java, cdi, rest]
-applies_to: [apache-camel]
+applies_to: [nexre]
 ---
 
 # Pattern: Quarkus - Apache Camel Karavan
@@ -142,11 +142,9 @@ Since v0.8.0 the entry **is** the argument: an entry renders as
 | `language` | `language:java/standards` | `playbook_get(ref="language:java/standards")` |
 | `architecture` | `architecture:0007-use-sftp` | `playbook_get(ref="architecture:0007-use-sftp")` |
 | `core` | `core:guardrails` | `playbook_get(ref="guardrails")` |
-| `req` | `req:ST-101` | `playbook_get(ref="req:ST-101")` |
 
-`gates:` is a tolerated alias of `gate:`, `requirement:` of `req:`, and any
-`core:` entry resolves to the guardrails bundle - these are doc kinds, so
-existing frontmatter keeps working.
+`gates:` is a tolerated alias of `gate:`, and any `core:` entry resolves to the
+guardrails bundle - these are doc kinds, so existing frontmatter keeps working.
 
 Valid `tool:` names are `playbook_start`, `playbook_get`, and `playbook_find`.
 **v0.8.0 is a clean break**: the v0.7.0 names (`playbook_start_task`,

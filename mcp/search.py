@@ -59,12 +59,6 @@ class SearchResult:
     score: float
     snippet: str  # Best matching excerpt
     heading: str | None  # Nearest preceding markdown heading (for context)
-    corpus: str = "standards"
-
-
-# Requirements are down-weighted in mixed (corpus="all") searches so curated
-# standards outrank a stale draft PRD on the same keywords.
-_REQUIREMENTS_SCORE_MULTIPLIER = 0.7
 
 
 # ---------------------------------------------------------------------------
@@ -193,9 +187,7 @@ class RulesSearchEngine:
         corpus: list[list[str]] = []
         for doc in docs:
             # Path / type tokens: identify the doc.
-            path_tokens = _tokenize(
-                doc.relative_path + " " + doc.project + " " + doc.doc_type + " " + doc.corpus
-            )
+            path_tokens = _tokenize(doc.relative_path + " " + doc.project + " " + doc.doc_type)
             content_tokens = _tokenize(doc.content)
 
             # Boosted tokens: headings + frontmatter title/tags weighted 2×.
@@ -219,20 +211,18 @@ class RulesSearchEngine:
         project: str | None = None,
         doc_type: str | None = None,
         top_k: int = DEFAULT_TOP_K,
-        corpus: str | None = "standards",
     ) -> list[SearchResult]:
         """
         BM25 search over docs.
 
-        Filters (project / doc_type / corpus) are applied BEFORE truncating at
-        top_k, so a filtered search never under-returns.
+        Filters (project / doc_type) are applied BEFORE truncating at top_k,
+        so a filtered search never under-returns.
 
         Args:
             query:    Natural language or keyword query.
             project:  Optional - filter results to a single project.
-            doc_type: Optional - filter by type (pattern, agents, prd, story, ...).
+            doc_type: Optional - filter by type (pattern, agents, workflow, ...).
             top_k:    Max results to return.
-            corpus:   "standards" (default), "requirements", "all", or None (=all).
 
         Returns:
             Ranked list of SearchResult, best match first.
@@ -248,7 +238,6 @@ class RulesSearchEngine:
 
         # Pre-filter candidate set, then rank - never truncate before filtering.
         candidates: list[tuple[RuleDoc, float]] = []
-        mixed = corpus in (None, "all")
         for doc, score in zip(self._docs, scores, strict=True):
             if score == 0.0:
                 continue
@@ -256,12 +245,7 @@ class RulesSearchEngine:
                 continue
             if doc_type and doc.doc_type != doc_type:
                 continue
-            if corpus not in (None, "all") and doc.corpus != corpus:
-                continue
-            adj = float(score)
-            if mixed and doc.corpus == "requirements":
-                adj *= _REQUIREMENTS_SCORE_MULTIPLIER
-            candidates.append((doc, adj))
+            candidates.append((doc, float(score)))
 
         candidates.sort(key=lambda x: x[1], reverse=True)
 
@@ -276,7 +260,6 @@ class RulesSearchEngine:
                     score=round(score, 4),
                     snippet=snippet,
                     heading=heading,
-                    corpus=doc.corpus,
                 )
             )
 
