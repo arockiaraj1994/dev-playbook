@@ -101,19 +101,56 @@ ports:
 ```
 
 `standards/` and `requirements/` are bind-mounted **read-only**, so rule authors
-edit markdown on the host and the server serves it. Requirements are TTL-reloaded
-(`MCP_REQUIREMENTS_TTL`, default 300s); standards are cached at boot, so restart
-after editing them:
+edit markdown on the host and the server serves it.
+
+#### Starting, stopping, restarting
+
+Run these from the repo root. Compose reads `.env` from the directory holding
+`docker-compose.yml`, so from anywhere else use
+`docker compose -f /path/to/dev-agent-playbook/docker-compose.yml …`. Without an
+`.env` at all, every command fails with
+`required variable MCP_ADMIN_PASSWORD is missing a value` - that guard is
+deliberate, so the server can never come up on unset credentials.
 
 ```bash
-docker compose restart          # pick up standards/ edits
-docker compose logs -f          # watch tool calls
-docker compose down             # stop; metrics + tokens survive in the volume
+docker compose restart          # restart in place - the usual one
+docker compose stop             # stop, keep the container
+docker compose start            # start it again
+docker compose down             # stop and remove the container
+docker compose up -d            # (re)create and start
+docker compose ps               # is it running / healthy?
+docker compose logs -f          # follow tool calls; Ctrl-C to detach
 ```
 
+**It also starts on boot** - the service sets `restart: unless-stopped`, so
+Docker brings it back with the daemon. You only need to start it by hand after a
+`docker compose down`, or after stopping it explicitly (`unless-stopped`
+deliberately does *not* resurrect something you stopped on purpose).
+
+#### Which command for which change
+
+| You changed | Do this | Why |
+|---|---|---|
+| A doc under `requirements/` | nothing | TTL-reloaded (`MCP_REQUIREMENTS_TTL`, default 300s) |
+| A doc under `standards/` | `docker compose restart` | the standards corpus is cached at boot |
+| `.env` (port, label, TTL) | `docker compose up -d` | recreates the container with the new environment |
+| Python code or `Dockerfile` | `docker compose up -d --build` | the image has to be rebuilt |
+| `MCP_ADMIN_PASSWORD` | `docker compose down -v && docker compose up -d` | see the warning below |
+
+If a restart does not seem to take, check it actually came back up -
+`docker compose ps` should read `Up … (healthy)`, and `docker compose logs
+--tail=20` will show the refusal message if the server exited on startup.
+
+#### What survives a restart
+
 Metrics and auth live in the named volume `playbook-data` (`/data/metrics.db`),
-so `down` does not lose usage history or issued MCP tokens. Use
-`docker compose down -v` to wipe them.
+so `restart`, `stop`/`start` and `down` all keep your usage history and issued
+MCP tokens.
+
+> **`docker compose down -v` deletes that volume.** It is the only way to change
+> the admin password (credentials are seeded once, on a fresh database), but it
+> also **invalidates every issued MCP token** - you will need to mint a new one
+> and re-register your editor.
 
 Get an MCP bearer token for an editor:
 
