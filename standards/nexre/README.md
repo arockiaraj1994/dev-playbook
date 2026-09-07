@@ -1,3 +1,7 @@
+---
+title: NexRe - dev-playbook project
+description: Rule docs and AI playbook for NexRe, a privacy-first read-it-later Android app.
+---
 # NexRe - dev-playbook project
 
 Rule docs and AI playbook for **NexRe**, a privacy-first read-it-later Android app.
