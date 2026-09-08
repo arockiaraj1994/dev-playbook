@@ -3,15 +3,21 @@
 An MCP server skeleton: SSE transport, local auth with issuable bearer tokens,
 a browser dashboard, and per-call usage telemetry.
 
-> **v1.0.0 removed the standards feature.** This repo used to serve a corpus of
-> team rule docs over MCP (`playbook_start` / `playbook_get` / `playbook_find`)
-> with a BM25 index, a doc validator and corpus health pages. All of that -
-> the corpus, loader, search, validator, quality rules and the three tools -
-> has been deleted. What remains is the server infrastructure those tools were
-> built on, so a new tool surface can be built on it.
+> **v1.0.0 removed the standards feature from MCP.** This repo used to serve a
+> corpus of team rule docs over MCP (`playbook_start` / `playbook_get` /
+> `playbook_find`) with a BM25 index and a doc validator. The BM25 index,
+> loader, search, validator, quality rules and the three tools have been
+> deleted. What remains is the server infrastructure those tools were built
+> on, so a new tool surface can be built on it.
 >
 > **The MCP server currently advertises no tools.** It connects, authenticates
 > and records calls, but `tools/list` returns an empty list.
+>
+> **The dashboard's Standards page was rebuilt as a lightweight,
+> self-contained module** that reads `standards/` straight off disk
+> (`mcp/standards_scanner.py`) - it has no dependency on the deleted
+> corpus/loader and doesn't back any MCP tool. `MCP_STANDARDS_ROOT` still
+> configures where it looks, and the Docker image still bakes in `standards/`.
 >
 > The last version with the full playbook surface is tagged in git history at
 > commit `92c00d2` (v0.9.0).
@@ -26,7 +32,8 @@ a browser dashboard, and per-call usage telemetry.
 | Auth | `mcp/auth.py`, `mcp/identity.py` | Local users, pbkdf2 password hashes, opaque bearer tokens |
 | Dashboard sessions | `mcp/session.py` | HttpOnly cookie session + CSRF double-submit |
 | Telemetry | `mcp/metrics.py` | SQLite: registrations, per-call rows, adoption/latency aggregates |
-| Dashboard | `mcp/dashboard/` | Users, tools, searches, activity, setup, tokens, user admin |
+| Dashboard | `mcp/dashboard/` | Users, tools, searches, activity, setup, tokens, user admin, standards |
+| Standards scanner | `mcp/standards_scanner.py` | Reads `standards/` off disk for the dashboard's corpus-health pages |
 
 ## Run it
 
@@ -83,6 +90,7 @@ curl -s -X POST http://localhost:3001/auth/login \
 | `MCP_SERVER_LABEL` | `dev-playbook` | Display name in the dashboard and MCP registration. |
 | `MCP_ADMIN_USER` | `admin` | Default admin username (seeded on first boot). |
 | `MCP_ADMIN_PASSWORD` | `admin` | Default admin password. **Required** (non-default) when `MCP_HOST=0.0.0.0`. |
+| `MCP_STANDARDS_ROOT` | `<repo>/standards` | Directory the dashboard's Standards page scans for rule-doc corpora. |
 
 Auth is entirely local: create users in `/dashboard/users-admin`, issue MCP
 tokens in `/dashboard/tokens`, and authenticate clients with
@@ -98,7 +106,7 @@ records status, latency and per-call context into metrics.
 
 ```bash
 cd mcp
-uv run pytest                  # 105 tests
+uv run pytest                  # 112 tests
 uv run ruff check .
 uv run ruff format --check .
 ```

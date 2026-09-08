@@ -458,12 +458,22 @@ def build_dashboard_routes(
         from standards_scanner import scan_project
 
         name = request.path_params.get("name", "")
-        if not standards_root or not (standards_root / name).is_dir():
-            return HTMLResponse(
-                f"<p>Project <code>{_html_escape(name)}</code> not found.</p>",
-                status_code=404,
-            )
-        status = scan_project(name, standards_root / name)
+        project_dir = (standards_root / name).resolve() if standards_root else None
+        not_found = HTMLResponse(
+            f"<p>Project <code>{_html_escape(name)}</code> not found.</p>",
+            status_code=404,
+        )
+        if (
+            not standards_root
+            or not name
+            or "/" in name
+            or "\\" in name
+            or project_dir is None
+            or standards_root.resolve() not in project_dir.parents
+            or not project_dir.is_dir()
+        ):
+            return not_found
+        status = scan_project(name, project_dir)
         # Group files by their top-level folder for display.
         groups: dict[str, list] = {}
         for fs in status.files:

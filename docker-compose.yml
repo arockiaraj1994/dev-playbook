@@ -37,7 +37,6 @@ services:
       # No default: compose fails loudly rather than the server exiting 1.
       MCP_ADMIN_PASSWORD: "${MCP_ADMIN_PASSWORD:?set MCP_ADMIN_PASSWORD in .env}"
       MCP_INACTIVE_DAYS: "${MCP_INACTIVE_DAYS:-2}"
-      MCP_SNIPPET_SIZE: "${MCP_SNIPPET_SIZE:-300}"
 
     volumes:
       # Metrics + auth SQLite. Named volume so `docker compose down` keeps

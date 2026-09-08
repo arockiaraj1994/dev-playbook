@@ -87,7 +87,7 @@
   --chart-err-fill: rgba(217, 72, 31, 0.08);
   --chart-cat-search: #4257E0;
   --chart-cat-get: #0E8FA3;
-  --chart-cat-list: #9D5A2F;
+  --chart-cat-start: #9D5A2F;
 
   /* Layout */
   --sidebar-w: 232px;
@@ -167,7 +167,7 @@
   --chart-err-fill: rgba(242, 94, 46, 0.12);
   --chart-cat-search: #6479E8;
   --chart-cat-get: #1FA3B8;
-  --chart-cat-list: #C57F2E;
+  --chart-cat-start: #C57F2E;
 
   --shadow-md: 0 1px 2px rgba(0, 0, 0, 0.3);
   --shadow-pop: 0 12px 40px rgba(0, 0, 0, 0.5);

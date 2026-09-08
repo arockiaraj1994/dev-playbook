@@ -204,11 +204,11 @@ _CANONICAL_TOOL_SQL = (
     + " ELSE tool_name END"
 )
 
-# Family classification on the canonical name (search / get / list) for the
+# Family classification on the canonical name (search / get / start) for the
 # by-tool-family breakdown. LIKE fallbacks keep truly unknown names counted.
 _FAMILY_SEARCH_SQL = f"({_CANONICAL_TOOL_SQL}) = 'playbook_find'"
 _FAMILY_GET_SQL = f"({_CANONICAL_TOOL_SQL}) = 'playbook_get'"
-_FAMILY_LIST_SQL = f"({_CANONICAL_TOOL_SQL}) = 'playbook_start' OR tool_name LIKE 'start%'"
+_FAMILY_START_SQL = f"({_CANONICAL_TOOL_SQL}) = 'playbook_start' OR tool_name LIKE 'start%'"
 
 
 def _now() -> str:
@@ -662,7 +662,7 @@ class MetricsStore:
                     date(created_at) AS day,
                     SUM(CASE WHEN {_FAMILY_SEARCH_SQL} THEN 1 ELSE 0 END) AS search_count,
                     SUM(CASE WHEN {_FAMILY_GET_SQL}    THEN 1 ELSE 0 END) AS get_count,
-                    SUM(CASE WHEN {_FAMILY_LIST_SQL}   THEN 1 ELSE 0 END) AS list_count
+                    SUM(CASE WHEN {_FAMILY_START_SQL}  THEN 1 ELSE 0 END) AS start_count
                 FROM calls
                 WHERE created_at >= ?
                 GROUP BY date(created_at)
@@ -730,7 +730,7 @@ class MetricsStore:
             r["day"]: {
                 "search": r["search_count"] or 0,
                 "get": r["get_count"] or 0,
-                "list": r["list_count"] or 0,
+                "start": r["start_count"] or 0,
             }
             for r in daily_rows
         }
@@ -740,7 +740,7 @@ class MetricsStore:
         for offset in range(6, -1, -1):
             d = today_dt - timedelta(days=offset)
             key = str(d)
-            data = daily_by_day.get(key, {"search": 0, "get": 0, "list": 0})
+            data = daily_by_day.get(key, {"search": 0, "get": 0, "start": 0})
             daily.append({"label": DAY_ABBR[d.weekday()], **data})
 
         # Live users list

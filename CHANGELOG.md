@@ -8,20 +8,34 @@ changes after 1.0.0 will bump the **major**.
 
 ## [Unreleased]
 
-### Removed - BREAKING - v1.0.0 (standards feature deleted)
-- **The standards feature is gone, code included.** Deleted `standards/`,
-  `mcp/tools/` (all three `playbook_*` tools), `mcp/loader.py`, `mcp/corpus.py`,
-  `mcp/search.py`, `mcp/cache.py`, `mcp/refs.py`, `mcp/index_render.py`,
-  `mcp/quality.py`, `mcp/quality_rules.py`, `scripts/validate-rules.py`,
-  `mcp/dev.py`, `TEMPLATE.md` and `CONTRIBUTING.md`.
+### Added - dashboard standards module (post-v1.0.0)
+- **Rebuilt the Standards/Projects dashboard page** as a lightweight,
+  self-contained module: `mcp/standards_scanner.py` reads `standards/`
+  straight off disk with no dependency on the deleted corpus/loader/BM25
+  index. Adds `/dashboard/standards` routes and templates, a project detail
+  view, and unit tests.
+- `MCP_STANDARDS_ROOT` is back (defaults to `<repo>/standards`), and the
+  Docker image bakes `standards/` back in.
+- This does **not** restore any MCP tool - `playbook_start` / `playbook_get`
+  / `playbook_find` remain deleted; the scanner only backs the dashboard page.
+- Tests: 105 → 112.
+
+### Removed - BREAKING - v1.0.0 (standards feature deleted from MCP)
+- **The standards MCP tool surface is gone, code included.** Deleted
+  `mcp/tools/` (all three `playbook_*` tools), `mcp/loader.py`,
+  `mcp/corpus.py`, `mcp/search.py`, `mcp/cache.py`, `mcp/refs.py`,
+  `mcp/index_render.py`, `mcp/quality.py`, `mcp/quality_rules.py`,
+  `scripts/validate-rules.py`, `mcp/dev.py`, `TEMPLATE.md` and
+  `CONTRIBUTING.md`. (`standards/` itself and the dashboard's corpus-health
+  page were later rebuilt - see "Added" above.)
 - **The MCP server advertises no tools.** `list_tools()` returns `[]`; every
   `tools/call` returns `Unknown tool`. Dispatch, timing and metrics recording
   are intact, so a new surface can be added at one place in `mcp/server.py`.
-- Dashboard loses the Standards and Guide pages, the corpus-health scoring, the
-  project detail view and `POST /dashboard/reload`. Users, tools, searches,
-  activity, setup, tokens and user admin remain.
+- Dashboard temporarily lost the Standards and Guide pages, the corpus-health
+  scoring, the project detail view and `POST /dashboard/reload`; the Standards
+  page was rebuilt (see "Added" above). Users, tools, searches, activity,
+  setup, tokens and user admin remain.
 - CI drops the corpus validation job; pre-commit drops the `validate-rules` hook.
-- Docker no longer bakes in or bind-mounts a corpus; `MCP_STANDARDS_ROOT` is gone.
 - Tests: 280 → 105 (the corpus, search, quality, refs and tool suites are gone).
 - Version bumped to **1.0.0**.
 

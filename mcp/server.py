@@ -1,10 +1,12 @@
 """
 server.py - Dev Playbook MCP Server (SSE only).
 
-The standards corpus and its three playbook_* tools were removed in v1.0.0.
-What remains is the server skeleton: SSE transport, local auth, dashboard
-sessions and usage metrics - a base to build a new tool surface on. The MCP
-server currently advertises no tools.
+The three playbook_* tools that served the standards corpus were removed in
+v1.0.0. What remains is the server skeleton: SSE transport, local auth,
+dashboard sessions and usage metrics - a base to build a new tool surface on.
+The MCP server currently advertises no tools. (The dashboard's Standards page
+was later rebuilt as a disk-reading module in standards_scanner.py; it does
+not back any MCP tool.)
 
 Run:
   uv run server.py
