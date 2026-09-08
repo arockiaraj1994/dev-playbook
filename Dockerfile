@@ -18,8 +18,8 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # ---- runtime ----------------------------------------------------------------
 FROM python:3.12-slim-bookworm
 
-# Non-root: the server only ever reads the corpora, and writes solely to
-# /data (metrics + auth SQLite).
+# Non-root: all mutable state (metrics, auth, and now the standards corpus)
+# lives in /data as SQLite; everything under /app is read-only application code.
 RUN useradd --system --create-home --uid 10001 playbook
 
 ENV PATH="/opt/venv/bin:$PATH" \
@@ -33,7 +33,6 @@ COPY --from=build /opt/venv /opt/venv
 
 WORKDIR /app
 COPY mcp/ /app/mcp/
-COPY standards/ /app/standards/
 
 RUN mkdir -p /data && chown -R playbook:playbook /data /app
 USER playbook

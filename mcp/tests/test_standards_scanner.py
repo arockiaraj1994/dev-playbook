@@ -1,13 +1,22 @@
 """
-Unit tests for the standards scanner.
+Unit tests for the standards scanner (store-backed).
 """
 
 from __future__ import annotations
 
-import stat
 from pathlib import Path
 
-from standards_scanner import _parse_frontmatter, _extract_title, _extract_description, _run_file_rules, scan_project, scan_all
+import pytest
+
+from standards_scanner import (
+    _extract_description,
+    _extract_title,
+    _parse_frontmatter,
+    _run_file_rules,
+    scan_all,
+    scan_project,
+)
+from standards_store import StandardsStore
 
 
 def test_parse_frontmatter():
@@ -23,11 +32,8 @@ def test_parse_frontmatter():
 
 
 def test_extract_title():
-    # From meta
     assert _extract_title({"title": "From Meta"}, "Body", "file.md") == "From Meta"
-    # From H1
     assert _extract_title({}, "# From H1\nContent", "file.md") == "From H1"
-    # Fallback to filename
     assert _extract_title({}, "Just body", "file.md") == "file.md"
 
 
@@ -36,95 +42,118 @@ def test_extract_description():
     assert _extract_description({}) == ""
 
 
-def test_scan_project_missing_required(tmp_path: Path):
-    # Empty project
-    status = scan_project("empty", tmp_path)
+def test_run_file_rules_gate_executable_flag():
+    passing = _run_file_rules(
+        "gates/scripts/check.sh", {"title": "T", "description": "D"}, "A" * 100, True
+    )
+    failing = _run_file_rules(
+        "gates/scripts/check.sh", {"title": "T", "description": "D"}, "A" * 100, False
+    )
+    assert next(r for r in passing if r.rule_id == "gate-executable").passed
+    assert not next(r for r in failing if r.rule_id == "gate-executable").passed
+
+
+@pytest.fixture
+async def store(tmp_path: Path) -> StandardsStore:
+    s = StandardsStore(tmp_path / "standards.db")
+    await s.init()
+    return s
+
+
+_VALID_BODY = (
+    "This is a long enough body to pass the minimum content length check.\n"
+    "It must be at least eighty characters long to be considered valid.\n"
+    "```python\nprint('code block')\n```\n"
+)
+
+_REQUIRED_FILES = (
+    "AGENTS.md",
+    "core/guardrails.md",
+    "core/definition-of-done.md",
+    "core/glossary.md",
+    "gates/README.md",
+    "workflows/new-feature.md",
+    "workflows/bug-fix.md",
+    "workflows/security-fix.md",
+    "workflows/refactor.md",
+)
+
+
+async def _seed_valid_project(store: StandardsStore, project: str) -> None:
+    for path in _REQUIRED_FILES:
+        await store.upsert_file(
+            project=project,
+            relative_path=path,
+            kind="markdown",
+            title="Test Doc",
+            description="Valid description for the file.",
+            frontmatter="title: Test Doc\ndescription: Valid description for the file.",
+            body=_VALID_BODY,
+            expected_version=None,
+        )
+
+
+async def test_scan_project_missing_required(store: StandardsStore):
+    status = await scan_project(store, "empty")
     assert status.project == "empty"
     assert status.indicator == "red"
     assert "AGENTS.md" in status.missing_required
     assert "workflows/new-feature.md" in status.missing_required
 
 
-def test_scan_project_healthy(tmp_path: Path):
-    # Setup healthy project structure
-    (tmp_path / "core").mkdir()
-    (tmp_path / "workflows").mkdir()
-    (tmp_path / "gates" / "scripts").mkdir(parents=True)
-
-    # Required files
-    files = [
-        "AGENTS.md",
-        "core/guardrails.md",
-        "core/definition-of-done.md",
-        "core/glossary.md",
-        "gates/README.md",
-        "workflows/new-feature.md",
-        "workflows/bug-fix.md",
-        "workflows/security-fix.md",
-        "workflows/refactor.md",
-    ]
-
-    valid_content = (
-        "---\n"
-        "title: Test Doc\n"
-        "description: Valid description for the file.\n"
-        "---\n\n"
-        "This is a long enough body to pass the minimum content length check.\n"
-        "It must be at least eighty characters long to be considered valid.\n"
-        "```python\nprint('code block')\n```\n"
-    )
-
-    for f in files:
-        p = tmp_path / f
-        p.write_text(valid_content)
-
-    status = scan_project("healthy", tmp_path)
+async def test_scan_project_healthy(store: StandardsStore):
+    await _seed_valid_project(store, "healthy")
+    status = await scan_project(store, "healthy")
     assert status.indicator == "green"
     assert not status.missing_required
     assert status.counts["red"] == 0
     assert status.counts["amber"] == 0
-    assert status.counts["green"] == len(files)
+    assert status.counts["green"] == len(_REQUIRED_FILES)
+
+    agents = next(f for f in status.files if f.relative_path == "AGENTS.md")
+    assert agents.raw_body == _VALID_BODY
+    assert agents.frontmatter == {
+        "title": "Test Doc",
+        "description": "Valid description for the file.",
+    }
 
 
-def test_scan_project_with_gate_script(tmp_path: Path):
-    # Setup project with an un-executable gate script
-    (tmp_path / "gates" / "scripts").mkdir(parents=True)
-    
-    # Required files to avoid red indicator from missing files
-    files = [
-        "AGENTS.md",
-        "core/guardrails.md",
-        "core/definition-of-done.md",
-        "core/glossary.md",
-        "gates/README.md",
-        "workflows/new-feature.md",
-        "workflows/bug-fix.md",
-        "workflows/security-fix.md",
-        "workflows/refactor.md",
-    ]
-    for f in files:
-        (tmp_path / f).parent.mkdir(exist_ok=True, parents=True)
-        (tmp_path / f).write_text("---\ntitle: T\ndescription: D\n---\n" + "A" * 100 + "\n```\n```\n")
+async def test_scan_project_with_gate_script(store: StandardsStore):
+    await _seed_valid_project(store, "gates_test")
+    await store.upsert_file(
+        project="gates_test",
+        relative_path="gates/scripts/check.sh",
+        kind="script",
+        title="check.sh",
+        body="#!/bin/bash",
+        is_executable=False,
+        expected_version=None,
+    )
 
-    script = tmp_path / "gates" / "scripts" / "check.sh"
-    script.write_text("#!/bin/bash")
-    
-    # Should be amber because script is not executable
-    status = scan_project("gates_test", tmp_path)
+    status = await scan_project(store, "gates_test")
     assert status.indicator == "amber"
     assert status.counts["amber"] == 1
-    
-    # Make executable
-    script.chmod(script.stat().st_mode | stat.S_IXUSR)
-    status2 = scan_project("gates_test", tmp_path)
+    script_status = next(f for f in status.files if f.relative_path == "gates/scripts/check.sh")
+    assert script_status.raw_body == "#!/bin/bash"
+    assert script_status.frontmatter == {}
+
+    row = await store.get_file("gates_test", "gates/scripts/check.sh")
+    await store.upsert_file(
+        project="gates_test",
+        relative_path="gates/scripts/check.sh",
+        kind="script",
+        title="check.sh",
+        body="#!/bin/bash",
+        is_executable=True,
+        expected_version=row.version,
+    )
+    status2 = await scan_project(store, "gates_test")
     assert status2.indicator == "green"
 
 
-def test_scan_all(tmp_path: Path):
-    (tmp_path / "proj1").mkdir()
-    (tmp_path / "proj2").mkdir()
-    (tmp_path / ".hidden").mkdir()
-    
-    projects = scan_all(tmp_path)
-    assert len(projects) == 2
+async def test_scan_all(store: StandardsStore):
+    await _seed_valid_project(store, "proj1")
+    await _seed_valid_project(store, "proj2")
+
+    projects = await scan_all(store)
     assert {p.project for p in projects} == {"proj1", "proj2"}

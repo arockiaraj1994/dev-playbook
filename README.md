@@ -13,11 +13,15 @@ a browser dashboard, and per-call usage telemetry.
 > **The MCP server currently advertises no tools.** It connects, authenticates
 > and records calls, but `tools/list` returns an empty list.
 >
-> **The dashboard's Standards page was rebuilt as a lightweight,
-> self-contained module** that reads `standards/` straight off disk
-> (`mcp/standards_scanner.py`) - it has no dependency on the deleted
-> corpus/loader and doesn't back any MCP tool. `MCP_STANDARDS_ROOT` still
-> configures where it looks, and the Docker image still bakes in `standards/`.
+> **The dashboard's Standards page reads its corpus from SQLite**, not the
+> filesystem. `mcp/standards_store.py` is the DAL (`standards_projects` /
+> `standards_files` tables in the same `metrics.db`); `mcp/standards_scanner.py`
+> runs the same validation rules as before against store rows instead of
+> files. Admins can create, edit, and delete docs live from the dashboard - a
+> four-tab file viewer (Formatted / Source / Code / Edit) per file. Initial
+> content ships as `mcp/data/standards_seed.json` and loads into the DB on
+> first boot. It has no dependency on the deleted corpus/loader and doesn't
+> back any MCP tool.
 >
 > The last version with the full playbook surface is tagged in git history at
 > commit `92c00d2` (v0.9.0).
@@ -33,7 +37,8 @@ a browser dashboard, and per-call usage telemetry.
 | Dashboard sessions | `mcp/session.py` | HttpOnly cookie session + CSRF double-submit |
 | Telemetry | `mcp/metrics.py` | SQLite: registrations, per-call rows, adoption/latency aggregates |
 | Dashboard | `mcp/dashboard/` | Users, tools, searches, activity, setup, tokens, user admin, standards |
-| Standards scanner | `mcp/standards_scanner.py` | Reads `standards/` off disk for the dashboard's corpus-health pages |
+| Standards store | `mcp/standards_store.py` | SQLite DAL for the standards corpus (CRUD, optimistic concurrency, seed/dump) |
+| Standards scanner | `mcp/standards_scanner.py` | Runs validation rules against store rows for the dashboard's corpus-health pages |
 
 ## Run it
 
@@ -90,7 +95,7 @@ curl -s -X POST http://localhost:3001/auth/login \
 | `MCP_SERVER_LABEL` | `dev-playbook` | Display name in the dashboard and MCP registration. |
 | `MCP_ADMIN_USER` | `admin` | Default admin username (seeded on first boot). |
 | `MCP_ADMIN_PASSWORD` | `admin` | Default admin password. **Required** (non-default) when `MCP_HOST=0.0.0.0`. |
-| `MCP_STANDARDS_ROOT` | `<repo>/standards` | Directory the dashboard's Standards page scans for rule-doc corpora. |
+| `MCP_STANDARDS_SEED` | `mcp/data/standards_seed.json` | JSON seed file loaded into the standards tables on first boot (only when they're empty). |
 
 Auth is entirely local: create users in `/dashboard/users-admin`, issue MCP
 tokens in `/dashboard/tokens`, and authenticate clients with

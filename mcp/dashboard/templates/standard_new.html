@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}New doc - {{ project }} - Standards{% endblock %}
+{% block crumb %}<a href="/dashboard/standards" style="color:inherit">Standards</a> <span class="crumbs-sep">/</span> <a href="/dashboard/standards/{{ project }}" style="color:inherit">{{ project }}</a> <span class="crumbs-sep">/</span> <span class="current">New doc</span>{% endblock %}
+
+{% block content %}
+
+<div class="page-header">
+  <div>
+    <h1 class="page-title">New doc in {{ project }}</h1>
+    <p class="page-sub">Write the full file content, including the YAML frontmatter block, exactly as it would live on disk.</p>
+  </div>
+</div>
+
+<div class="card" style="padding:1.25rem">
+  <form method="post" action="/dashboard/standards/{{ project }}/__PATH__" id="new-doc-form">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <div class="se-field">
+      <label for="relative_path">Relative path</label>
+      <input type="text" id="relative_path" name="relative_path" required placeholder="e.g. workflows/hotfix.md"
+             autocomplete="off" spellcheck="false">
+    </div>
+    <div class="se-field">
+      <label for="content">Content</label>
+      <textarea id="content" name="content" class="mono" rows="24" spellcheck="false" placeholder="---&#10;title: &#10;description: &#10;---&#10;&#10;# Heading&#10;"></textarea>
+    </div>
+    <div style="display:flex;gap:.5rem">
+      <button type="submit" class="btn btn-primary">Create doc</button>
+      <a href="/dashboard/standards/{{ project }}" class="btn btn-ghost">Cancel</a>
+    </div>
+  </form>
+</div>
+
+{% endblock %}
+
+{% block page_script %}
+<script>
+(function () {
+  var form = document.getElementById('new-doc-form');
+  var pathInput = document.getElementById('relative_path');
+  form.addEventListener('submit', function () {
+    var path = pathInput.value.trim().replace(/^\/+/, '');
+    form.action = '/dashboard/standards/{{ project }}/' + path.split('/').map(encodeURIComponent).join('/');
+  });
+})();
+</script>
+{% endblock %}

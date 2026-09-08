@@ -32,8 +32,12 @@ Thumbs.db
 .env.local
 *.local
 
-# Runtime data (metrics DB)
-mcp/data/
+# Runtime data (metrics DB, incl. auth users/tokens) - never commit this file.
+# The two committed seed artifacts below hold standards content ONLY (no
+# users/tokens tables) - see mcp/standards_store.py seed_from_json.
+mcp/data/*
+!mcp/data/standards_seed.json
+!mcp/data/standards_seed.db
 
 # Build artifacts
 dist/

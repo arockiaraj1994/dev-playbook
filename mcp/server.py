@@ -5,8 +5,8 @@ The three playbook_* tools that served the standards corpus were removed in
 v1.0.0. What remains is the server skeleton: SSE transport, local auth,
 dashboard sessions and usage metrics - a base to build a new tool surface on.
 The MCP server currently advertises no tools. (The dashboard's Standards page
-was later rebuilt as a disk-reading module in standards_scanner.py; it does
-not back any MCP tool.)
+reads its corpus from SQLite via standards_store.py / standards_scanner.py -
+admins edit it live from the dashboard; it does not back any MCP tool.)
 
 Run:
   uv run server.py
@@ -30,6 +30,8 @@ Other env vars:
   MCP_INACTIVE_DAYS - "inactive" threshold (default 2)
   MCP_ADMIN_USER - override default admin username (default: admin)
   MCP_ADMIN_PASSWORD - override default admin password (default: admin)
+  MCP_STANDARDS_SEED - JSON seed file loaded into the standards tables on
+    first boot, when they're empty (default <repo>/mcp/data/standards_seed.json)
 """
 
 from __future__ import annotations
@@ -72,6 +74,7 @@ from identity import (
 )
 from metrics import MetricsStore, summarize_args
 from session import DashboardSession
+from standards_store import StandardsStore
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -449,7 +452,7 @@ class AppDeps:
     metrics: MetricsStore
     inactive_days: int
     auth_store: AuthStore
-    standards_root: Path | None = field(default=None)
+    standards: StandardsStore | None = field(default=None)
     sse_transport: SseServerTransport | None = field(default=None)
 
 
@@ -614,7 +617,7 @@ def build_app(deps: AppDeps) -> Starlette:
                 deps.auth_store,
                 dashboard_session,
                 auth_enabled=deps.cfg.auth_enabled,
-                standards_root=deps.standards_root,
+                standards=deps.standards,
             ),
         ),
         Route("/", endpoint=_root_redirect, methods=["GET"]),
@@ -664,14 +667,11 @@ def _resolve_inactive_days() -> int:
         return DEFAULT_INACTIVE_DAYS
 
 
-def _resolve_standards_root() -> Path | None:
-    raw = os.environ.get("MCP_STANDARDS_ROOT", "").strip()
+def _resolve_standards_seed_path() -> Path:
+    raw = os.environ.get("MCP_STANDARDS_SEED", "").strip()
     if raw:
-        p = Path(raw).expanduser().resolve()
-        return p if p.is_dir() else None
-    # Default: <repo>/standards (one level above mcp/)
-    default = Path(__file__).resolve().parent.parent / "standards"
-    return default if default.is_dir() else None
+        return Path(raw).expanduser().resolve()
+    return Path(__file__).resolve().parent / "data" / "standards_seed.json"
 
 
 async def _serve() -> None:
@@ -703,12 +703,23 @@ async def _serve() -> None:
     logger.info("Auth store ready (default admin: %s)", cfg.admin_username)
 
     days = _resolve_inactive_days()
-    standards_root = _resolve_standards_root()
-    logger.info("Standards root: %s", standards_root)
-    app = build_app(AppDeps(
-        cfg=cfg, metrics=metrics, inactive_days=days,
-        auth_store=auth_store, standards_root=standards_root,
-    ))
+
+    standards = StandardsStore(db_path)
+    await standards.init()
+    seed_path = _resolve_standards_seed_path()
+    seeded = await standards.seed_from_json(seed_path)
+    if seeded:
+        logger.info("Seeded %d standards files from %s", seeded, seed_path)
+
+    app = build_app(
+        AppDeps(
+            cfg=cfg,
+            metrics=metrics,
+            inactive_days=days,
+            auth_store=auth_store,
+            standards=standards,
+        )
+    )
 
     logger.info(
         "Starting on http://%s:%d (auth=%s, inactive_days=%d, db=%s)",

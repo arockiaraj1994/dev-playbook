@@ -32,10 +32,12 @@ from starlette.templating import Jinja2Templates
 
 from identity import scope_principal
 from metrics import MetricsStore
+from standards_store import VersionConflict
 
 if TYPE_CHECKING:
     from auth import AuthStore
     from session import DashboardSession
+    from standards_store import StandardsStore
 
 _DASHBOARD_DIR = Path(__file__).resolve().parent
 _TEMPLATES_DIR = _DASHBOARD_DIR / "templates"
@@ -46,7 +48,15 @@ def _build_templates() -> Jinja2Templates:
     templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
     templates.env.filters["since"] = _since_filter
     templates.env.filters["short_dt"] = _short_dt_filter
+    templates.env.filters["fm_value"] = _fm_value_filter
     return templates
+
+
+def _fm_value_filter(value: object) -> str:
+    """Render a frontmatter value for the two-column table (lists joined)."""
+    if isinstance(value, (list, tuple)):
+        return ", ".join(str(v) for v in value)
+    return str(value)
 
 
 # ---------------------------------------------------------------------------
@@ -104,7 +114,7 @@ def build_dashboard_routes(
     auth_store: AuthStore | None = None,
     dashboard_session: DashboardSession | None = None,
     auth_enabled: bool = False,
-    standards_root: Path | None = None,
+    standards: StandardsStore | None = None,
 ) -> list[BaseRoute]:
     templates = _build_templates()
 
@@ -442,12 +452,54 @@ def build_dashboard_routes(
             return RedirectResponse("/dashboard/users-admin?error=duplicate", status_code=303)
         return RedirectResponse("/dashboard/users-admin?created=1", status_code=303)
 
-    # -- Standards (corpus health) -------------------------------------------
+    # -- Standards (corpus health, SQLite-backed) ----------------------------
+
+    _GROUP_ORDER = [
+        "AGENTS.md",
+        "INDEX.md",
+        "README.md",
+        "core",
+        "languages",
+        "patterns",
+        "skills",
+        "workflows",
+        "gates",
+    ]
+
+    def _group_key(k: str) -> int:
+        try:
+            return _GROUP_ORDER.index(k)
+        except ValueError:
+            return len(_GROUP_ORDER)
+
+    def _group_files(files: list) -> list[tuple[str, list]]:
+        groups: dict[str, list] = {}
+        for fs in files:
+            head = (
+                fs.relative_path.split("/", 1)[0] if "/" in fs.relative_path else fs.relative_path
+            )
+            groups.setdefault(head, []).append(fs)
+        return sorted(groups.items(), key=lambda kv: _group_key(kv[0]))
+
+    def _not_found(what: str, value: str) -> Response:
+        return HTMLResponse(
+            f"<p>{what} <code>{_html_escape(value)}</code> not found.</p>", status_code=404
+        )
+
+    def _valid_relative_path(path: str) -> bool:
+        if not path or path.startswith("/") or path.endswith("/"):
+            return False
+        return all(part not in ("", ".", "..") for part in path.split("/"))
+
+    def _infer_kind(relative_path: str) -> str:
+        if relative_path.startswith("gates/scripts/") and not relative_path.endswith(".md"):
+            return "script"
+        return "markdown"
 
     async def standards_view(request: Request) -> Response:
         from standards_scanner import scan_all
 
-        projects = scan_all(standards_root) if standards_root else []
+        projects = await scan_all(standards) if standards else []
         return templates.TemplateResponse(
             request,
             "standards.html",
@@ -455,52 +507,36 @@ def build_dashboard_routes(
         )
 
     async def standard_detail_view(request: Request) -> Response:
+        import base64
+
         from standards_scanner import scan_project
 
         name = request.path_params.get("name", "")
-        project_dir = (standards_root / name).resolve() if standards_root else None
-        not_found = HTMLResponse(
-            f"<p>Project <code>{_html_escape(name)}</code> not found.</p>",
-            status_code=404,
-        )
-        if (
-            not standards_root
-            or not name
-            or "/" in name
-            or "\\" in name
-            or project_dir is None
-            or standards_root.resolve() not in project_dir.parents
-            or not project_dir.is_dir()
-        ):
-            return not_found
-        status = scan_project(name, project_dir)
-        # Group files by their top-level folder for display.
-        groups: dict[str, list] = {}
-        for fs in status.files:
-            head = (
-                fs.relative_path.split("/", 1)[0] if "/" in fs.relative_path else fs.relative_path
-            )
-            groups.setdefault(head, []).append(fs)
-        # Stable ordering of groups.
-        group_order = [
-            "AGENTS.md",
-            "INDEX.md",
-            "README.md",
-            "core",
-            "languages",
-            "patterns",
-            "skills",
-            "workflows",
-            "gates",
-        ]
+        if not standards or not name or "/" in name or "\\" in name:
+            return _not_found("Project", name)
+        if name not in await standards.list_projects():
+            return _not_found("Project", name)
 
-        def _gkey(k: str) -> int:
-            try:
-                return group_order.index(k)
-            except ValueError:
-                return len(group_order)
+        status = await scan_project(standards, name)
+        rows = await standards.list_files(name)
+        rows_by_path = {r.relative_path: r for r in rows}
 
-        ordered_groups = sorted(groups.items(), key=lambda kv: _gkey(kv[0]))
+        def _full_content(row) -> str:
+            if row.kind == "markdown" and row.frontmatter.strip():
+                return f"---\n{row.frontmatter}\n---\n{row.body}"
+            return row.body
+
+        raw_by_path = {
+            path: base64.b64encode(_full_content(row).encode("utf-8")).decode("ascii")
+            for path, row in rows_by_path.items()
+        }
+        body_by_path = {
+            path: base64.b64encode(row.body.encode("utf-8")).decode("ascii")
+            for path, row in rows_by_path.items()
+        }
+        version_by_path = {path: row.version for path, row in rows_by_path.items()}
+        kind_by_path = {path: row.kind for path, row in rows_by_path.items()}
+
         return templates.TemplateResponse(
             request,
             "standard_detail.html",
@@ -508,9 +544,207 @@ def build_dashboard_routes(
                 request,
                 page="standards",
                 status=status,
-                groups=ordered_groups,
+                groups=_group_files(status.files),
+                raw_by_path=raw_by_path,
+                body_by_path=body_by_path,
+                version_by_path=version_by_path,
+                kind_by_path=kind_by_path,
+                rule_catalog=_RULE_CATALOG,
             ),
         )
+
+    def _admin_or_forbidden(request: Request) -> Response | None:
+        principal = scope_principal(request.scope)
+        if principal is None or getattr(principal, "role", "user") != "admin":
+            return _forbidden(request)
+        return None
+
+    async def standard_new_view(request: Request) -> Response:
+        forbidden = _admin_or_forbidden(request)
+        if forbidden:
+            return forbidden
+        name = request.path_params.get("name", "")
+        return templates.TemplateResponse(
+            request,
+            "standard_new.html",
+            _ctx(request, page="standards", project=name),
+        )
+
+    def _csrf_header_or_403(request: Request) -> Response | None:
+        """CSRF check for JSON (fetch) requests: header instead of form field."""
+        if dashboard_session is None:
+            return None
+        cookie_val = dashboard_session.read_csrf_cookie(request.scope)
+        header_val = request.headers.get("x-csrf-token")
+        if not dashboard_session.validate_csrf(cookie_val, header_val):
+            return JSONResponse({"error": "invalid_csrf"}, status_code=403)
+        return None
+
+    async def standard_file_api(request: Request) -> Response:
+        """POST /api/standards/{name}/file - JSON save for the Edit tab."""
+        from standards_scanner import (
+            _extract_description,
+            _extract_title,
+            _file_status,
+            _parse_frontmatter,
+        )
+
+        principal = scope_principal(request.scope)
+        if principal is None or getattr(principal, "role", "user") != "admin":
+            return JSONResponse({"error": "forbidden"}, status_code=403)
+        if not standards:
+            return JSONResponse({"error": "not_found"}, status_code=404)
+
+        csrf_err = _csrf_header_or_403(request)
+        if csrf_err:
+            return csrf_err
+
+        try:
+            body_json = await request.json()
+        except Exception:
+            return JSONResponse({"error": "invalid_json"}, status_code=400)
+
+        name = request.path_params["name"]
+        path = str(body_json.get("path", ""))
+        content = str(body_json.get("content", ""))
+        raw_expected_version = body_json.get("expected_version")
+
+        if not _valid_relative_path(path):
+            return JSONResponse({"error": "invalid_path"}, status_code=400)
+
+        try:
+            expected_version = (
+                int(raw_expected_version) if raw_expected_version is not None else None
+            )
+        except (TypeError, ValueError):
+            return JSONResponse({"error": "invalid_version"}, status_code=400)
+
+        kind = _infer_kind(path)
+        if kind == "markdown":
+            meta, body_text = _parse_frontmatter(content)
+            frontmatter_text = _frontmatter_only(content)
+            title = _extract_title(meta, body_text, path.rsplit("/", 1)[-1])
+            description = _extract_description(meta)
+        else:
+            frontmatter_text = ""
+            body_text = content
+            title = path.rsplit("/", 1)[-1]
+            description = ""
+
+        existing = await standards.get_file(name, path)
+        is_executable = existing.is_executable if existing else False
+
+        try:
+            row = await standards.upsert_file(
+                project=name,
+                relative_path=path,
+                kind=kind,
+                title=title,
+                description=description,
+                frontmatter=frontmatter_text,
+                body=body_text,
+                is_executable=is_executable,
+                expected_version=expected_version,
+                updated_by=principal.user_name,
+            )
+        except VersionConflict as exc:
+            return JSONResponse(
+                {"error": "version_conflict", "current_version": exc.actual}, status_code=409
+            )
+
+        file_status = _file_status(row)
+        return JSONResponse(
+            {
+                "relative_path": file_status.relative_path,
+                "title": file_status.title,
+                "summary": file_status.summary,
+                "indicator": file_status.indicator,
+                "frontmatter": file_status.frontmatter,
+                "raw_body": file_status.raw_body,
+                "version": row.version,
+                "rules": [
+                    {
+                        "rule_id": r.rule_id,
+                        "severity": r.severity,
+                        "passed": r.passed,
+                        "message": r.message,
+                    }
+                    for r in file_status.rules
+                ],
+            }
+        )
+
+    async def standard_create(request: Request) -> Response:
+        """POST /standards/{name}/{path} - create a new doc (full-page form, not the JSON API)."""
+        from standards_scanner import _extract_description, _extract_title, _parse_frontmatter
+
+        forbidden = _admin_or_forbidden(request)
+        if forbidden:
+            return forbidden
+        if not standards:
+            return _not_found("Project", request.path_params.get("name", ""))
+        name = request.path_params["name"]
+        path = request.path_params["path"]
+        form = await request.form()
+        csrf_err = _validate_csrf_or_403(request, form)
+        if csrf_err:
+            return csrf_err
+
+        if not _valid_relative_path(path):
+            return HTMLResponse("400 Bad Request - invalid file path.", status_code=400)
+
+        content = str(form.get("content", ""))
+        kind = _infer_kind(path)
+        if kind == "markdown":
+            meta, body_text = _parse_frontmatter(content)
+            frontmatter_text = _frontmatter_only(content)
+            title = _extract_title(meta, body_text, path.rsplit("/", 1)[-1])
+            description = _extract_description(meta)
+        else:
+            frontmatter_text = ""
+            body_text = content
+            title = path.rsplit("/", 1)[-1]
+            description = ""
+
+        principal = scope_principal(request.scope)
+
+        try:
+            await standards.upsert_file(
+                project=name,
+                relative_path=path,
+                kind=kind,
+                title=title,
+                description=description,
+                frontmatter=frontmatter_text,
+                body=body_text,
+                is_executable=False,
+                expected_version=None,  # this route only ever creates
+                updated_by=principal.user_name if principal else None,
+            )
+        except VersionConflict:
+            return HTMLResponse(
+                f"<h1>409 Conflict</h1><p>A file already exists at "
+                f"<code>{_html_escape(path)}</code>. "
+                f'<a href="/dashboard/standards/{name}">Go back</a> and edit it there instead.</p>',
+                status_code=409,
+            )
+
+        return RedirectResponse(f"/dashboard/standards/{name}", status_code=303)
+
+    async def standard_delete(request: Request) -> Response:
+        forbidden = _admin_or_forbidden(request)
+        if forbidden:
+            return forbidden
+        if not standards:
+            return _not_found("Project", request.path_params.get("name", ""))
+        name = request.path_params["name"]
+        path = request.path_params["path"]
+        form = await request.form()
+        csrf_err = _validate_csrf_or_403(request, form)
+        if csrf_err:
+            return csrf_err
+        await standards.delete_file(name, path)
+        return RedirectResponse(f"/dashboard/standards/{name}", status_code=303)
 
     static = Mount("/static", app=StaticFiles(directory=str(_STATIC_DIR)), name="static")
 
@@ -521,7 +755,11 @@ def build_dashboard_routes(
         Route("/searches", endpoint=searches_view, methods=["GET"]),
         Route("/activity", endpoint=activity_view, methods=["GET"]),
         Route("/standards", endpoint=standards_view, methods=["GET"]),
+        Route("/standards/{name}/new", endpoint=standard_new_view, methods=["GET"]),
+        Route("/standards/{name}/{path:path}/delete", endpoint=standard_delete, methods=["POST"]),
+        Route("/standards/{name}/{path:path}", endpoint=standard_create, methods=["POST"]),
         Route("/standards/{name}", endpoint=standard_detail_view, methods=["GET"]),
+        Route("/api/standards/{name}/file", endpoint=standard_file_api, methods=["POST"]),
         Route("/setup", endpoint=setup_view, methods=["GET"]),
         Route("/api/me/last-call", endpoint=setup_last_call_api, methods=["GET"]),
         Route("/api/palette", endpoint=palette_api, methods=["GET"]),
@@ -554,3 +792,36 @@ def _int_query(request: Request, key: str, *, default: int, lo: int, hi: int) ->
 
 def _html_escape(s: str) -> str:
     return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
+
+
+def _frontmatter_only(content: str) -> str:
+    """Extract the raw YAML text between the --- markers, without parsing it."""
+    import re
+
+    m = re.match(r"^---\s*\n(.*?\n)---\s*\n", content, re.DOTALL)
+    return m.group(1).rstrip("\n") if m else ""
+
+
+# rule_id -> (severity, one-line description) - shown in the detail page's
+# rule-catalog reference block so severity badges have somewhere to link.
+_RULE_CATALOG: dict[str, tuple[str, str]] = {
+    "required-file": (
+        "hard",
+        "A file every standards project must ship (AGENTS.md, core/*, gates/README.md).",
+    ),
+    "required-workflow": (
+        "hard",
+        "A workflow doc every project must ship (new-feature, bug-fix, security-fix, refactor).",
+    ),
+    "fm-title": ("hard", "The file's YAML frontmatter must set a `title`."),
+    "fm-description": ("hard", "The file's YAML frontmatter must set a `description`."),
+    "content-length": (
+        "soft",
+        "Body content (excluding frontmatter) should be at least 80 characters.",
+    ),
+    "structured-content": ("soft", "Body should contain at least one fenced code block or table."),
+    "gate-executable": (
+        "soft",
+        "Shell scripts under gates/scripts/ should have their executable bit set.",
+    ),
+}

@@ -1,5 +1,10 @@
 {% extends "base.html" %}
 {% block title %}{{ status.project }} - Standards{% endblock %}
+{% block head_extra %}
+<link rel="stylesheet" href="/dashboard/static/vendor/codemirror.min.css">
+<link rel="stylesheet" href="/dashboard/static/vendor/prism.css">
+<link rel="stylesheet" href="/dashboard/static/standard_detail.css">
+{% endblock %}
 {% block crumb %}<a href="/dashboard/standards" style="color:inherit">Standards</a> <span class="crumbs-sep">/</span> <span class="current">{{ status.project }}</span>{% endblock %}
 
 {% block content %}
@@ -20,6 +25,12 @@
       {% endif %}
     </p>
   </div>
+  {% if is_admin %}
+  <a href="/dashboard/standards/{{ status.project }}/new" class="btn btn-primary" style="align-self:flex-start">
+    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+    New doc
+  </a>
+  {% endif %}
 </div>
 
 {% if status.missing_required %}
@@ -57,7 +68,14 @@
   <div class="file-group">
     <div class="file-group-head">{{ group_name }}/</div>
     {% for fs in group_files %}
-    <details class="file-card file-{{ fs.indicator }}">
+    {% set kind = kind_by_path.get(fs.relative_path, 'markdown') %}
+    <details class="file-card file-{{ fs.indicator }}"
+              data-project="{{ status.project }}"
+              data-path="{{ fs.relative_path }}"
+              data-kind="{{ kind }}"
+              data-version="{{ version_by_path.get(fs.relative_path, 1) }}"
+              data-raw-b64="{{ raw_by_path.get(fs.relative_path, '') }}"
+              data-body-b64="{{ body_by_path.get(fs.relative_path, '') }}">
       <summary class="file-summary">
         <span class="indicator-dot indicator-{{ fs.indicator }}"
               title="{{ fs.indicator|capitalize }} – {{ fs.failed|length }} rule(s) failing"></span>
@@ -75,16 +93,69 @@
       </summary>
       <div class="file-body">
         {% if fs.summary %}<p class="file-desc">{{ fs.summary }}</p>{% endif %}
-        <ul class="rule-list">
-          {% for r in fs.rules %}
-          <li class="rule-row {% if r.passed %}rule-pass{% else %}rule-fail{% endif %}">
-            <span class="indicator-dot indicator-{{ 'green' if r.passed else ('red' if r.severity == 'hard' else 'amber') }}"></span>
-            <span class="rule-message">{{ r.message }}</span>
-            <span class="rule-id mono">{{ r.rule_id }}</span>
-            <span class="rule-severity">{{ r.severity }}</span>
-          </li>
-          {% endfor %}
-        </ul>
+
+        <div class="sd-panels">
+          {% if kind == 'markdown' %}
+          <div class="sd-panel">
+            <h4>Frontmatter</h4>
+            {% if fs.frontmatter %}
+            <table class="frontmatter-table">
+              {% for key, value in fs.frontmatter.items() %}
+              <tr><th>{{ key }}</th><td>{{ value|fm_value }}</td></tr>
+              {% endfor %}
+            </table>
+            {% else %}
+            <p class="muted" style="font-size:.8125rem">No frontmatter.</p>
+            {% endif %}
+          </div>
+          {% endif %}
+          <div class="sd-panel">
+            <h4>Rules</h4>
+            <ul class="rule-list">
+              {% for r in fs.rules %}
+              <li class="rule-row {% if r.passed %}rule-pass{% else %}rule-fail{% endif %}">
+                <span class="indicator-dot indicator-{{ 'green' if r.passed else ('red' if r.severity == 'hard' else 'amber') }}"></span>
+                <span class="rule-message">{{ r.message }}</span>
+                <a class="rule-id mono" href="#rule-{{ r.rule_id }}">{{ r.rule_id }}</a>
+                <span class="rule-severity">{{ r.severity }}</span>
+              </li>
+              {% endfor %}
+            </ul>
+          </div>
+        </div>
+
+        {% if is_admin %}
+        <div style="display:flex;gap:.5rem;margin:12px 0">
+          <form method="post" action="/dashboard/standards/{{ status.project }}/{{ fs.relative_path }}/delete"
+                onsubmit="return confirm('Delete {{ fs.relative_path }}? This cannot be undone.');" style="margin:0">
+            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+            <button type="submit" class="btn btn-ghost" style="color:var(--red-700,#b91c1c)">Delete</button>
+          </form>
+        </div>
+        {% endif %}
+
+        <div class="sd-tabs" role="tablist">
+          {% if kind == 'markdown' %}<button type="button" class="sd-tab is-active" data-tab="formatted">Formatted</button>{% endif %}
+          <button type="button" class="sd-tab {{ 'is-active' if kind != 'markdown' }}" data-tab="source">Source</button>
+          <button type="button" class="sd-tab" data-tab="code">Code</button>
+          {% if is_admin %}<button type="button" class="sd-tab" data-tab="edit">Edit</button>{% endif %}
+        </div>
+
+        {% if kind == 'markdown' %}
+        <div class="sd-tabpanel sd-panel-formatted is-active markdown-body"></div>
+        {% endif %}
+        <div class="sd-tabpanel sd-panel-source {{ 'is-active' if kind != 'markdown' }}" hidden><pre class="mono"></pre></div>
+        <div class="sd-tabpanel sd-panel-code" hidden><pre class="mono"><code></code></pre></div>
+        {% if is_admin %}
+        <div class="sd-tabpanel sd-panel-edit" hidden>
+          <div class="sd-editor-mount"></div>
+          <div class="sd-editor-actions">
+            <button type="button" class="btn btn-primary sd-save">Save</button>
+            <button type="button" class="btn btn-ghost sd-cancel">Cancel</button>
+            <span class="sd-save-status" role="status"></span>
+          </div>
+        </div>
+        {% endif %}
       </div>
     </details>
     {% endfor %}
@@ -92,4 +163,33 @@
   {% endfor %}
 </section>
 
+{# Rule catalog reference #}
+<section class="doc-section">
+  <details>
+    <summary style="cursor:pointer;font-weight:600">Rule catalog</summary>
+    <ul class="rule-list" style="margin-top:8px">
+      {% for rule_id, info in rule_catalog.items() %}
+      <li class="rule-row" id="rule-{{ rule_id }}">
+        <span class="indicator-dot indicator-{{ 'red' if info[0] == 'hard' else 'amber' }}"></span>
+        <span class="rule-id mono">{{ rule_id }}</span>
+        <span class="rule-message">{{ info[1] }}</span>
+        <span class="rule-severity">{{ info[0] }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+  </details>
+</section>
+
+{% endblock %}
+
+{% block page_script %}
+<script src="/dashboard/static/vendor/marked.min.js"></script>
+<script src="/dashboard/static/vendor/purify.min.js"></script>
+<script src="/dashboard/static/vendor/prism.js"></script>
+<script src="/dashboard/static/vendor/prism-markdown.min.js"></script>
+<script src="/dashboard/static/vendor/prism-bash.min.js"></script>
+<script src="/dashboard/static/vendor/codemirror.min.js"></script>
+<script src="/dashboard/static/vendor/cm-markdown.min.js"></script>
+<script src="/dashboard/static/vendor/cm-shell.min.js"></script>
+<script src="/dashboard/static/standard_detail.js"></script>
 {% endblock %}

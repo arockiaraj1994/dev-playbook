@@ -1,9 +1,9 @@
 """
-standards_scanner.py - Lightweight scanner for the standards/ corpus.
+standards_scanner.py - Lightweight scanner for the standards corpus.
 
-Walks the standards/ directory on disk, parses YAML frontmatter from each
-.md file, and runs validation rules.  Returns ProjectStatus / FileStatus
-dataclasses consumed by the dashboard Standards pages.
+Reads file rows from a StandardsStore (SQLite), parses YAML frontmatter from
+each markdown row, and runs validation rules. Returns ProjectStatus /
+FileStatus dataclasses consumed by the dashboard Standards pages.
 
 No dependency on the deleted loader / corpus / search infrastructure.
 """
@@ -11,11 +11,13 @@ No dependency on the deleted loader / corpus / search infrastructure.
 from __future__ import annotations
 
 import re
-import stat
 from dataclasses import dataclass, field
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import yaml
+
+if TYPE_CHECKING:
+    from standards_store import FileRow, StandardsStore
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -63,6 +65,8 @@ class FileStatus:
     rules: list[RuleResult]
     title: str = ""
     summary: str = ""
+    raw_body: str = ""  # post-frontmatter markdown source (empty for scripts)
+    frontmatter: dict = field(default_factory=dict)  # parsed YAML (empty for scripts)
 
     @property
     def passed(self) -> list[RuleResult]:
@@ -111,7 +115,7 @@ def _parse_frontmatter(content: str) -> tuple[dict, str]:
         meta = {}
     if not isinstance(meta, dict):
         meta = {}
-    body = content[m.end():]
+    body = content[m.end() :]
     return meta, body
 
 
@@ -140,9 +144,12 @@ def _extract_description(meta: dict) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _run_file_rules(
-    rel_path: str, meta: dict, body: str, project_root: Path
-) -> list[RuleResult]:
+def _run_file_rules(rel_path: str, meta: dict, body: str, is_executable: bool) -> list[RuleResult]:
+    """Run the per-file rule set.
+
+    `is_executable` matters only for rows under gates/scripts/ - it comes
+    from the stored `is_executable` flag rather than a filesystem stat().
+    """
     results: list[RuleResult] = []
 
     # Hard: frontmatter has title
@@ -152,7 +159,9 @@ def _run_file_rules(
             rule_id="fm-title",
             severity=SEVERITY_HARD,
             passed=has_title,
-            message="YAML frontmatter has title" if has_title else "Missing title in YAML frontmatter",
+            message="YAML frontmatter has title"
+            if has_title
+            else "Missing title in YAML frontmatter",
         )
     )
 
@@ -205,16 +214,14 @@ def _run_file_rules(
 
     # Soft: gate scripts referenced in .md under gates/scripts/
     if rel_path.startswith("gates/scripts/"):
-        full = project_root / rel_path
-        is_exec = full.exists() and bool(full.stat().st_mode & stat.S_IXUSR)
         results.append(
             RuleResult(
                 rule_id="gate-executable",
                 severity=SEVERITY_SOFT,
-                passed=is_exec,
+                passed=is_executable,
                 message=(
                     "Gate script is executable"
-                    if is_exec
+                    if is_executable
                     else "Gate script is not executable (chmod +x)"
                 ),
             )
@@ -236,26 +243,68 @@ def _indicator(results: list[RuleResult]) -> str:
     return "green"
 
 
-def scan_project(project_name: str, project_root: Path) -> ProjectStatus:
-    """Scan a single standards project directory and return its health status."""
-    all_results: list[RuleResult] = []
-    files: list[FileStatus] = []
+def _file_status(row: FileRow) -> FileStatus:
+    if row.kind == "markdown":
+        meta: dict = {}
+        if row.frontmatter.strip():
+            try:
+                loaded = yaml.safe_load(row.frontmatter)
+            except yaml.YAMLError:
+                loaded = None
+            if isinstance(loaded, dict):
+                meta = loaded
+        body = row.body
+        title = row.title or _extract_title(meta, body, row.relative_path.rsplit("/", 1)[-1])
+        desc = row.description or _extract_description(meta)
+        rules = _run_file_rules(row.relative_path, meta, body, row.is_executable)
+        return FileStatus(
+            relative_path=row.relative_path,
+            name=row.relative_path.rsplit("/", 1)[-1],
+            indicator=_indicator(rules),
+            rules=rules,
+            title=title,
+            summary=desc,
+            raw_body=body,
+            frontmatter=meta,
+        )
 
-    # Check required files
+    # Gate scripts (non-markdown rows): a single executable-bit rule, as before.
+    rules = [
+        RuleResult(
+            rule_id="gate-executable",
+            severity=SEVERITY_SOFT,
+            passed=row.is_executable,
+            message=(
+                "Gate script is executable"
+                if row.is_executable
+                else "Gate script is not executable (chmod +x)"
+            ),
+        )
+    ]
+    name = row.relative_path.rsplit("/", 1)[-1]
+    return FileStatus(
+        relative_path=row.relative_path,
+        name=name,
+        indicator="green" if row.is_executable else "amber",
+        rules=rules,
+        title=name,
+        summary=f"Gate script: {name}",
+        raw_body=row.body,
+    )
+
+
+async def scan_project(store: StandardsStore, project_name: str) -> ProjectStatus:
+    """Scan a single standards project and return its health status."""
+    rows = await store.list_files(project_name)
+    present_paths = {r.relative_path for r in rows}
+
     missing: list[str] = []
+    all_results: list[RuleResult] = []
+
     for req in REQUIRED_FILES:
-        if not (project_root / req).is_file():
+        present = req in present_paths
+        if not present:
             missing.append(req)
-
-    # Check required workflows
-    for wf in REQUIRED_WORKFLOWS:
-        wf_path = f"workflows/{wf}.md"
-        if not (project_root / wf_path).is_file():
-            missing.append(wf_path)
-
-    # Project-level rule results
-    for req in REQUIRED_FILES:
-        present = (project_root / req).is_file()
         all_results.append(
             RuleResult(
                 rule_id="required-file",
@@ -267,7 +316,9 @@ def scan_project(project_name: str, project_root: Path) -> ProjectStatus:
 
     for wf in REQUIRED_WORKFLOWS:
         wf_path = f"workflows/{wf}.md"
-        present = (project_root / wf_path).is_file()
+        present = wf_path in present_paths
+        if not present:
+            missing.append(wf_path)
         all_results.append(
             RuleResult(
                 rule_id="required-workflow",
@@ -277,72 +328,14 @@ def scan_project(project_name: str, project_root: Path) -> ProjectStatus:
             )
         )
 
-    # Walk all .md files
-    for md_file in sorted(project_root.rglob("*.md")):
-        if not md_file.is_file():
-            continue
-        rel = str(md_file.relative_to(project_root))
+    files = [_file_status(row) for row in rows]
 
-        try:
-            content = md_file.read_text(encoding="utf-8")
-        except OSError:
-            continue
-
-        meta, body = _parse_frontmatter(content)
-        title = _extract_title(meta, body, md_file.name)
-        desc = _extract_description(meta)
-        file_rules = _run_file_rules(rel, meta, body, project_root)
-
-        file_ind = _indicator(file_rules)
-        files.append(
-            FileStatus(
-                relative_path=rel,
-                name=md_file.name,
-                indicator=file_ind,
-                rules=file_rules,
-                title=title,
-                summary=desc,
-            )
-        )
-
-    # Walk gate scripts (non-.md files under gates/scripts/)
-    gate_scripts_dir = project_root / "gates" / "scripts"
-    if gate_scripts_dir.is_dir():
-        for script_file in sorted(gate_scripts_dir.iterdir()):
-            if script_file.is_file() and not script_file.name.endswith(".md"):
-                rel = str(script_file.relative_to(project_root))
-                is_exec = bool(script_file.stat().st_mode & stat.S_IXUSR)
-                rules = [
-                    RuleResult(
-                        rule_id="gate-executable",
-                        severity=SEVERITY_SOFT,
-                        passed=is_exec,
-                        message=(
-                            "Gate script is executable"
-                            if is_exec
-                            else "Gate script is not executable (chmod +x)"
-                        ),
-                    )
-                ]
-                files.append(
-                    FileStatus(
-                        relative_path=rel,
-                        name=script_file.name,
-                        indicator="green" if is_exec else "amber",
-                        rules=rules,
-                        title=script_file.name,
-                        summary=f"Gate script: {script_file.name}",
-                    )
-                )
-
-    # Aggregate counts
     counts = {
         "red": sum(1 for f in files if f.indicator == "red"),
         "amber": sum(1 for f in files if f.indicator == "amber"),
         "green": sum(1 for f in files if f.indicator == "green"),
     }
 
-    # Overall project indicator
     if missing or counts["red"] > 0:
         proj_indicator = "red"
     elif counts["amber"] > 0:
@@ -360,12 +353,7 @@ def scan_project(project_name: str, project_root: Path) -> ProjectStatus:
     )
 
 
-def scan_all(standards_root: Path) -> list[ProjectStatus]:
-    """Scan all project directories under the standards root."""
-    if not standards_root.is_dir():
-        return []
-    projects = []
-    for child in sorted(standards_root.iterdir()):
-        if child.is_dir() and not child.name.startswith("."):
-            projects.append(scan_project(child.name, child))
-    return projects
+async def scan_all(store: StandardsStore) -> list[ProjectStatus]:
+    """Scan every project registered in the store."""
+    projects = await store.list_projects()
+    return [await scan_project(store, name) for name in projects]
