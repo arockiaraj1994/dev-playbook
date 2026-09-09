@@ -47,23 +47,57 @@
   {% endfor %}
 {% endmacro %}
 
-{# A rule checkbox. Locked rules render checked and disabled, with a hidden
-   mirror so they still submit - the service forces them on regardless. #}
+{# A rule checkbox plus its help affordance. Locked rules render checked and
+   disabled, with a hidden mirror so they still submit - the service forces
+   them on regardless.
+
+   The row is a <div>, not a <label>, because a <button> inside a <label>
+   activates that label: nesting the help trigger would toggle the checkbox on
+   every click. The label now covers the checkbox and text only, and the help
+   button is its sibling in a right-hand gutter. #}
 {% macro rule_row(rule, field, selected) %}
-<label class="rule-row">
-  <input type="checkbox" name="{{ field }}" value="{{ rule.id }}"
-         {% if rule.locked or rule.id in selected %}checked{% endif %}
-         {% if rule.locked %}disabled{% endif %}
-         class="{% if not rule.locked %}optional-rule{% endif %}">
-  {% if rule.locked %}<input type="hidden" name="{{ field }}" value="{{ rule.id }}">{% endif %}
-  <span class="rule-body">
-    <span class="rule-title">{{ rule.title }}</span>
-    <span class="badge badge-{{ rule.severity }}">{{ rule.severity }}</span>
-    {% if rule.locked %}<span class="badge badge-locked">required</span>{% endif %}
-    {% if rule.source %}<span class="rule-source">{{ rule.source }}</span>{% endif %}
-    <span class="rule-text">{{ rule.body }}</span>
-  </span>
-</label>
+<div class="rule-row">
+  <label class="rule-label">
+    <input type="checkbox" name="{{ field }}" value="{{ rule.id }}"
+           {% if rule.locked or rule.id in selected %}checked{% endif %}
+           {% if rule.locked %}disabled{% endif %}
+           class="{% if not rule.locked %}optional-rule{% endif %}">
+    {% if rule.locked %}<input type="hidden" name="{{ field }}" value="{{ rule.id }}">{% endif %}
+    <span class="rule-body">
+      <span class="rule-title">{{ rule.title }}</span>
+      <span class="badge badge-{{ rule.severity }}">{{ rule.severity }}</span>
+      {% if rule.locked %}<span class="badge badge-locked">required</span>{% endif %}
+      {% if rule.source %}<span class="rule-source">{{ rule.source }}</span>{% endif %}
+      <span class="rule-text">{{ rule.body }}</span>
+    </span>
+  </label>
+  <button type="button" class="rule-help-btn" data-help-for="{{ rule.id }}"
+          aria-haspopup="dialog" aria-label="What &quot;{{ rule.title }}&quot; means">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>
+    </svg>
+  </button>
+</div>
+{% endmacro %}
+
+{# The single shared dialog every help button on the page opens. Rendered once
+   per rules step; wizard_rules.js fills the body from the JSON island. #}
+{% macro rule_help_modal() %}
+<div id="rule-help-modal" class="modal-overlay" role="dialog" aria-modal="true"
+     aria-labelledby="rule-help-title" hidden>
+  <div class="modal-backdrop"></div>
+  <div class="modal-panel rule-help-panel">
+    <div class="modal-header">
+      <div class="rule-help-heading">
+        <h2 id="rule-help-title"></h2>
+        <div class="rule-help-meta"></div>
+      </div>
+      <button type="button" class="modal-close" aria-label="Close">&times;</button>
+    </div>
+    <div class="modal-body"></div>
+  </div>
+</div>
 {% endmacro %}
 
 {# One collapsed category. A closed <details> still submits its checkboxes -

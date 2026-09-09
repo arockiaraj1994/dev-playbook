@@ -42,6 +42,26 @@ rules:
     body: >-
       `src/domain/` must not import a database client, an HTTP library,
       `fs`, or any framework. It depends on the language and on itself.
+    help: >-
+      A domain free of I/O can be tested with plain function calls: no database
+      container, no fixture server, no fake filesystem. That is what keeps the fastest
+      tests in the codebase fast. It also means the business rules survive a change of
+      database or HTTP client, because they never knew which one you were using.
+    example:
+      bad: |
+        // src/domain/order.ts
+        import { db } from "../adapters/db";
+
+        export async function place(cmd: Cmd) {
+          await db.order.create({ data: cmd });   // domain now needs a database
+        }
+      good: |
+        // src/domain/order.ts
+        export function place(cmd: Cmd): Order {
+          if (cmd.lines.length === 0) throw new EmptyOrder();
+          return { id: cmd.id, lines: cmd.lines, status: "placed" };
+        }
+        // persistence happens in the use case, one layer out
 
   - id: dependencies-point-inward
     group: dependency
@@ -51,6 +71,20 @@ rules:
     body: >-
       `adapters` may import `application`; `application` may import
       `domain`. Never the reverse.
+    help: >-
+      The one-way rule is what lets the domain compile and run with nothing else in the
+      project present. The moment it imports something from application or adapters,
+      that isolation is gone and the layering is only a folder convention. When the
+      inner layer needs something from outside, declare the interface inward and
+      implement it outward.
+    example:
+      lang: text
+      bad: |
+        adapters  ->  application  ->  domain
+                          domain    ->  adapters   # for one type
+      good: |
+        adapters  ->  application  ->  domain
+                                       domain -> (nothing)
 
   - id: no-deep-relative-imports
     group: dependency
@@ -59,6 +93,16 @@ rules:
     body: >-
       `../../../` reaching across modules is a boundary violation in
       disguise. Use a path alias and import the module's public entry point.
+    help: >-
+      `../../../` is a boundary violation written in path syntax: it reaches past the
+      module's own edge into another module's interior. It also breaks the moment a file
+      moves, and it hides the dependency from anyone scanning imports for module names.
+      An alias makes the crossing explicit and survives a reorganisation.
+    example:
+      bad: |
+        import { OrderRepo } from "../../../orders/internal/repo";
+      good: |
+        import { placeOrder } from "@/orders";   // module entry point
 
   - id: import-module-entry-points
     group: dependency
@@ -67,6 +111,17 @@ rules:
     body: >-
       Each module exposes an `index.ts`. Importing a file inside another
       module couples you to its private layout.
+    help: >-
+      Importing a file inside another module couples you to its layout, so a rename or a
+      split inside that module breaks your file even though its public surface never
+      changed. Going through `index.ts` means the module can rearrange its interior
+      freely, and the index is also where you can see what it actually intends to
+      expose.
+    example:
+      bad: |
+        import { calcVat } from "@/billing/internal/vat-table";
+      good: |
+        import { calcVat } from "@/billing";
 
   - id: adapters-do-not-import-adapters
     group: dependency
@@ -75,6 +130,27 @@ rules:
     body: >-
       An inbound adapter must not import an outbound adapter, or vice versa.
       They communicate through the application layer.
+    help: >-
+      A handler calling the database directly skips the layer that owns the use case,
+      and with it the transaction boundary and the authorization check. The behaviour
+      also becomes unreachable from anywhere else, so a worker or a CLI doing the same
+      job has to reimplement it and the two copies drift.
+    example:
+      bad: |
+        // adapters/http/orders.ts
+        import { db } from "../db/client";
+
+        router.post("/orders", async (req, res) => {
+          res.json(await db.order.create({ data: req.body }));
+        });
+      good: |
+        // adapters/http/orders.ts
+        import { placeOrder } from "@/application";
+
+        router.post("/orders", async (req, res) => {
+          const order = await placeOrder(toCommand(req.body));
+          res.json(toOrderResponse(order));
+        });
 
   - id: no-domain-types-over-the-wire
     group: responsibility
@@ -84,6 +160,18 @@ rules:
       Inbound adapters own their request and response shapes. Sending a
       domain object straight to JSON makes every internal rename a breaking
       API change.
+    help: >-
+      `res.json(order)` publishes every field the domain object happens to carry, now
+      and in future. A rename becomes a breaking API change, and a field added for
+      internal bookkeeping becomes an unintended disclosure in the same commit that
+      added it. An explicit response type makes the API surface a deliberate decision.
+    example:
+      bad: |
+        res.json(order);
+        // ships internalMargin and supplierCost too
+      good: |
+        res.json(toOrderResponse(order));
+        // { id, status, total } - chosen, not inherited
 
   - id: adapters-translate-only
     group: responsibility
@@ -93,6 +181,24 @@ rules:
       An adapter converts between transport or storage shapes and
       application types. Business decisions belong in the domain or the use
       case.
+    help: >-
+      A rule inside an HTTP handler is reachable only over HTTP, so the same decision
+      has to be duplicated in every other entry point and the copies drift apart. It
+      also drags the web framework into the test for a business rule. Keep the handler
+      to parsing in and formatting out.
+    example:
+      bad: |
+        router.post("/orders", async (req, res) => {
+          if (req.body.total > 1000 && !req.session.verified)
+            return res.status(400).json({ error: "needs verification" });
+          ...
+        });
+      good: |
+        router.post("/orders", async (req, res) => {
+          const order = await placeOrder(toCommand(req.body, req.session));
+          res.json(toOrderResponse(order));
+        });
+        // the verification rule lives in placeOrder
 
   - id: composition-root-only-wiring
     group: responsibility
@@ -101,6 +207,22 @@ rules:
     body: >-
       Modules receive their dependencies as arguments. Only `src/config/`
       constructs concrete implementations.
+    help: >-
+      When a module constructs its own dependencies it also chooses them, so it cannot
+      be tested against a stub or reused against a different implementation.
+      Concentrating construction in one place also makes startup order explicit and
+      gives you a single file to read to see how the system is actually assembled.
+    example:
+      bad: |
+        // orders/use-cases.ts
+        import { PgOrders } from "@/adapters/db";
+        const orders = new PgOrders();   // hard-wired, unsubstitutable
+      good: |
+        // orders/use-cases.ts
+        export const makePlaceOrder = (orders: Orders) => async (cmd: Cmd) => { ... };
+
+        // config/container.ts
+        export const placeOrder = makePlaceOrder(new PgOrders(pool));
 
   - id: no-module-level-side-effects
     group: responsibility
@@ -110,3 +232,22 @@ rules:
       Importing a module must not open a connection, read the environment,
       or start a timer. Do that in an explicit init function the composition
       root calls.
+    help: >-
+      Module bodies run on import, in an order the bundler chooses, so a connection
+      opened at module level happens before your configuration is loaded and during any
+      test that transitively imports the file. It also makes imports non-tree-shakeable
+      and startup failures hard to attribute. Export an init function and let the
+      composition root decide when.
+    example:
+      bad: |
+        // db/client.ts
+        export const pool = new Pool({ url: process.env.DATABASE_URL });
+        // connects on import, in every test, before dotenv runs
+      good: |
+        // db/client.ts
+        let pool: Pool | undefined;
+        export function initDb(url: string) { pool = new Pool({ url }); return pool; }
+        export function getPool() {
+          if (!pool) throw new Error("initDb not called");
+          return pool;
+        }

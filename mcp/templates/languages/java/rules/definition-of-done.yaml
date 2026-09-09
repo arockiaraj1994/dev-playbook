@@ -7,12 +7,35 @@ rules:
     severity: soft
     title: Code is formatted
     body: The formatter has been run and produces no further changes.
+    help: >-
+      A formatter run as a final step keeps whitespace out of diffs entirely, so review
+      comments are about the code rather than about indentation, and two people editing
+      the same file do not produce a conflict over line wrapping. Because the tool is
+      deterministic, "formatted" is a fact you can check rather than a matter of taste.
+    example:
+      bad: |
+        $ ./gradlew spotlessCheck
+          > 3 files have format violations
+      good: |
+        $ ./gradlew spotlessApply && ./gradlew spotlessCheck
+          BUILD SUCCESSFUL
 
   - id: dod-static-analysis
     group: mechanical
     severity: soft
     title: The static analyser reports nothing new
     body: No new findings from the configured analyzer.
+    help: >-
+      The analyser catches the class of defect that survives review because it is
+      invisible at reading speed: a resource never closed, a null dereference on one
+      branch, a comparison that is always true. "Nothing new" rather than "nothing at
+      all" is the bar so an existing backlog does not block work, while the count never
+      grows.
+    example:
+      bad: |
+        SpotBugs: 14 findings (was 11)   # 3 new, merged anyway
+      good: |
+        SpotBugs: 11 findings (was 11)   # none introduced
 
   - id: dod-public-api-documented
     group: correctness
@@ -20,3 +43,17 @@ rules:
     title: New public classes and methods have Javadoc
     body: >-
       New public types and methods carry a Javadoc summary fragment.
+    help: >-
+      Javadoc on public types is what shows up in IDE autocomplete, which is where most
+      callers actually meet your API. The summary fragment matters more than the length:
+      one sentence saying what the method does and what it returns saves every future
+      caller from reading the implementation to find out.
+    example:
+      bad: |
+        public Optional<Order> find(OrderId id) { ... }   // no Javadoc
+      good: |
+        /**
+         * Returns the order with this id, or empty if the caller's
+         * tenant does not own one.
+         */
+        public Optional<Order> find(OrderId id) { ... }

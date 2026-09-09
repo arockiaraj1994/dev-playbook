@@ -8,6 +8,17 @@ rules:
     title: eslint reports nothing new
     body: >-
       No new eslint findings, and no rule disabled inline to get there.
+    help: >-
+      The second clause is the one that matters. Silencing a rule inline to get a green
+      run leaves the defect in place and adds a suppression that nobody will revisit, so
+      the lint result stops meaning anything. Fix the finding, or if the rule is
+      genuinely wrong here, disable it in config with a comment explaining why.
+    example:
+      bad: |
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
+        saveOrder(body);
+      good: |
+        await saveOrder(body);
 
   - id: dod-public-api-typed
     group: correctness
@@ -16,3 +27,17 @@ rules:
     body: >-
       Exported functions declare their parameter and return types rather
       than relying on inference across a module boundary.
+    help: >-
+      Inference works well inside a file and badly across module boundaries: an inferred
+      return type changes silently when the implementation changes, so a refactor can
+      alter your published API without a single line of the signature moving. Explicit
+      annotations make that a compile error in the file that owns the contract.
+    example:
+      bad: |
+        export function parseOrder(input) {
+          return { id: input.id, total: Number(input.total) };
+        }
+      good: |
+        export function parseOrder(input: unknown): Order {
+          return OrderSchema.parse(input);
+        }

@@ -34,6 +34,20 @@ rules:
     body: >-
       `as User` tells the compiler to stop checking; it does not make the value a
       `User`. Parse with a runtime schema at the boundary.
+    help: >-
+      Types are erased at runtime, so `as User` changes nothing about the value: it only
+      stops the compiler from asking questions. The failure surfaces later as an
+      undefined property on an object that everything downstream believed was checked.
+      Parse once at the boundary with a runtime schema, and let the validated type flow
+      inward.
+    example:
+      bad: |
+        const user = await res.json() as User;
+        user.profile.name.toUpperCase();
+        // TypeError: cannot read 'name' of undefined
+      good: |
+        const user = UserSchema.parse(await res.json());
+        // throws here, at the boundary, with the offending field named
 
   - id: ap-object-type
     group: types
@@ -42,6 +56,19 @@ rules:
     body: >-
       `{}` means "anything except null or undefined", which is almost never what
       you meant. Describe the actual shape, or use `Record<string, unknown>`.
+    help: >-
+      `{}` does not mean "an empty object": it means anything assignable that is not
+      null or undefined, so a string, a number and a function all satisfy it. That makes
+      it useless as a constraint while looking like one. Write the shape you actually
+      accept, or `Record<string, unknown>` when the keys really are open.
+    example:
+      bad: |
+        function log(meta: {}) { ... }
+        log("oops");    // accepted
+        log(42);        // accepted
+      good: |
+        function log(meta: Record<string, unknown>) { ... }
+        // or: function log(meta: { requestId: string; userId?: string })
 
   - id: ap-optional-everything
     group: types
@@ -50,6 +77,25 @@ rules:
     body: >-
       Optional properties push the check to every call site. Model the states that
       genuinely exist as a discriminated union instead.
+    help: >-
+      Optional properties spread the cost across the whole codebase: every reader must
+      handle absence, including for combinations that cannot occur. A discriminated
+      union states which fields exist in which state, so the compiler narrows them for
+      you and the impossible combination cannot be constructed at all.
+    example:
+      bad: |
+        interface Job {
+          status: string;
+          result?: string;
+          error?: string;    // both present? neither? unknowable
+        }
+      good: |
+        type Job =
+          | { status: "pending" }
+          | { status: "done"; result: string }
+          | { status: "failed"; error: string };
+
+        if (job.status === "done") job.result.trim();   // narrowed, no check
 
   - id: ap-boolean-blindness
     group: types
@@ -58,6 +104,18 @@ rules:
     body: >-
       Two booleans encode four states, of which perhaps two are legal. A string
       literal union makes the illegal ones unrepresentable.
+    help: >-
+      Independent booleans multiply: three of them describe eight states, and if only
+      three are legal the other five are bugs waiting for a call site to produce them. A
+      string union enumerates exactly the legal states, so the illegal ones fail to
+      compile and a `switch` over them can be checked for exhaustiveness.
+    example:
+      bad: |
+        function render(isLoading: boolean, isError: boolean) { ... }
+        render(true, true);   // loading and errored at once
+      good: |
+        type State = "loading" | "error" | "ready";
+        function render(state: State) { ... }
 
   - id: ap-async-without-await
     group: async
@@ -66,6 +124,25 @@ rules:
     body: >-
       An un-awaited promise swallows its rejection and finishes after the response
       is sent. Await it or hand it to something that will.
+    help: >-
+      An un-awaited promise detaches from the request that started it. Its rejection
+      becomes an unhandled rejection warning with no request context, and its work
+      completes after the response is sent, so an error can never reach the client and a
+      test can finish before the write lands. Await it, return it, or hand it to a queue
+      that owns it.
+    example:
+      bad: |
+        app.post("/orders", (req, res) => {
+          saveOrder(req.body);       // floating; rejection lost
+          res.json({ ok: true });    // reports success regardless
+        });
+      good: |
+        app.post("/orders", async (req, res, next) => {
+          try {
+            await saveOrder(req.body);
+            res.json({ ok: true });
+          } catch (e) { next(e); }
+        });
 
   - id: ap-await-in-loop
     group: async
@@ -74,6 +151,21 @@ rules:
     body: >-
       Awaiting inside a loop serializes independent work. Use `Promise.all` when
       the iterations do not depend on each other - and keep the loop when they do.
+    help: >-
+      Awaiting inside a loop makes total time the sum of the parts, so a hundred 50ms
+      calls take five seconds instead of fifty milliseconds. When each iteration is
+      independent, that serialization buys nothing. It is genuinely required when one
+      iteration feeds the next or when you are deliberately rate-limiting, so keep the
+      loop in those cases and say why.
+    example:
+      bad: |
+        const users = [];
+        for (const id of ids) {
+          users.push(await fetchUser(id));   // 100 x 50ms = 5s
+        }
+      good: |
+        const users = await Promise.all(ids.map(fetchUser));   // ~50ms
+        // keep the loop when each call depends on the previous result
 
   - id: ap-promise-in-condition
     group: async
@@ -82,6 +174,17 @@ rules:
     body: >-
       A promise is always truthy. `if (isReady())` on an async function is always
       true; await it first.
+    help: >-
+      A Promise object is always truthy, so the branch is taken whatever the promise
+      eventually resolves to, including false. Nothing in the syntax looks wrong, which
+      is what makes it easy to miss in review; the ESLint rule no-misused-promises
+      exists precisely because reading alone does not catch it.
+    example:
+      bad: |
+        async function isReady() { return false; }
+        if (isReady()) { deploy(); }    // always deploys
+      good: |
+        if (await isReady()) { deploy(); }
 
   - id: ap-catch-and-continue
     group: async
@@ -90,6 +193,23 @@ rules:
     body: >-
       Swallowing an error hides the failure and produces wrong results later.
       Handle it, wrap it with context, or let it propagate.
+    help: >-
+      An empty catch turns a failure into a wrong answer: the operation did not happen,
+      nothing recorded that, and the code proceeds as though it had. The eventual bug
+      appears somewhere unrelated with no trail back. If the error really is acceptable,
+      log it and say in a comment why; otherwise add context and rethrow.
+    example:
+      bad: |
+        try {
+          await cache.del(key);
+        } catch {}
+      good: |
+        try {
+          await cache.del(key);
+        } catch (e) {
+          // Best-effort: the entry expires within 60s anyway.
+          logger.debug({ err: e, key }, "cache evict failed");
+        }
 
   - id: ap-barrel-everything
     group: design
@@ -98,6 +218,22 @@ rules:
     body: >-
       A giant barrel file creates import cycles and defeats tree-shaking. Export a
       module's public surface, not every file in it.
+    help: >-
+      A barrel that re-exports every file makes any import of the module load all of it,
+      which defeats tree-shaking and inflates the bundle. It also creates cycles easily,
+      since two files inside the module both reach each other through the index. Export
+      the surface you intend other modules to use, and nothing else.
+    example:
+      bad: |
+        // orders/index.ts
+        export * from "./order";
+        export * from "./repository";
+        export * from "./internal-helpers";
+        export * from "./test-fixtures";
+      good: |
+        // orders/index.ts
+        export { placeOrder, cancelOrder } from "./use-cases";
+        export type { Order, OrderId } from "./order";
 
   - id: ap-god-util-module
     group: design
@@ -106,6 +242,21 @@ rules:
     body: >-
       Unrelated functions in one module couple everything that imports it. Put the
       function next to the type it serves.
+    help: >-
+      A module with no organising idea attracts everything, so importing one function
+      pulls in the transitive dependencies of all of them. It also becomes a hub in the
+      import graph, which is where cycles form. Put the function beside the type it
+      serves, and name small modules for the single thing they do.
+    example:
+      bad: |
+        // utils.ts
+        export function slugify(s: string) { ... }
+        export function formatMoney(c: number) { ... }
+        export function getDbPool() { ... }   // now every importer pulls in pg
+      good: |
+        // text/slug.ts     -> slugify
+        // money/format.ts  -> formatMoney
+        // db/pool.ts       -> getDbPool
 
   - id: ap-mutating-arguments
     group: design
@@ -114,6 +265,21 @@ rules:
     body: >-
       Callers do not expect their object to change. Return a new value; mark
       parameters `readonly` to make the intent explicit.
+    help: >-
+      Objects are passed by reference, so mutating a parameter changes the caller's
+      value in a way nothing at the call site suggests. The bug surfaces as state
+      changing between two lines that do not appear to touch it. Return a new value
+      instead, and mark parameters `readonly` so the compiler enforces the intent rather
+      than the convention.
+    example:
+      bad: |
+        function addTax(order: Order) {
+          order.total *= 1.2;      // caller's object silently changed
+        }
+      good: |
+        function withTax(order: Readonly<Order>): Order {
+          return { ...order, total: order.total * 1.2 };
+        }
 
   - id: ap-trusting-client-input
     group: security
@@ -123,6 +289,24 @@ rules:
       Re-check authorization against the authenticated session on every request.
       An id in the body proves nothing about who may access it.
     source: OWASP C1
+    help: >-
+      An id in a request body says which record the caller wants, never that they are
+      allowed to have it. Changing one value is the whole attack and it requires no
+      tooling. Authorize against the authenticated session at the point of access, on
+      every request, not once when the page that produced the link was rendered.
+    example:
+      bad: |
+        app.get("/invoices/:id", async (req, res) => {
+          res.json(await db.invoice.findUnique({ where: { id: req.params.id } }));
+        });   // any id, any tenant
+      good: |
+        app.get("/invoices/:id", async (req, res) => {
+          const invoice = await db.invoice.findFirst({
+            where: { id: req.params.id, ownerId: req.session.userId },
+          });
+          if (!invoice) return res.status(404).json({ error: "Not found" });
+          res.json(toInvoiceResponse(invoice));
+        });
 
   - id: ap-string-concatenated-queries
     group: security
@@ -132,6 +316,20 @@ rules:
       Use parameterized queries or the driver's binding API. Template literals in
       SQL are injection waiting to happen.
     source: OWASP C3
+    help: >-
+      A template literal makes interpolation invisible: `${}` looks identical whether
+      the value is a trusted constant or a request field. Bound parameters keep a value
+      a value, so no input can be reparsed as SQL. Tagged template helpers from the
+      driver are fine because they bind under the hood; plain backticks are not.
+    example:
+      bad: |
+        const rows = await db.query(
+          `SELECT * FROM users WHERE email = '${email}'`
+        );   // email = "' OR '1'='1"
+      good: |
+        const rows = await db.query(
+          "SELECT * FROM users WHERE email = $1", [email]
+        );   // or the driver's sql`` tagged template
 
   - id: ap-leaking-errors-to-client
     group: security
@@ -141,3 +339,18 @@ rules:
       Return a stable, generic error and keep the detail in the log. Stack traces
       disclose internals to anyone who can trigger a failure.
     source: OWASP C3
+    help: >-
+      A serialized error carries the stack, and with it your file paths, module names
+      and often the failing query. Anyone able to trigger the failure gets that for
+      free, which turns your error handler into a reconnaissance endpoint. Return one
+      stable message plus a correlation id and keep the rest in the log.
+    example:
+      bad: |
+        } catch (e) {
+          res.status(500).json({ error: e });   // stack, paths, SQL
+        }
+      good: |
+        } catch (e) {
+          logger.error({ err: e, requestId }, "lookup failed");
+          res.status(500).json({ error: "Internal error", requestId });
+        }

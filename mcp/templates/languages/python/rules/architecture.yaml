@@ -44,6 +44,27 @@ rules:
       `{{python_package}}.domain` must not import a database driver, an HTTP
       client, `os`, `pathlib` or a web framework. It depends on the standard
       library's pure parts and on itself.
+    help: >-
+      A domain free of I/O is testable with plain function calls: no database container,
+      no fixture server, no temp directory. That is what keeps the fastest tests in the
+      codebase fast. It also means the rules survive a change of database or web
+      framework, because they never knew which one you were using. Even `os` and
+      `pathlib` count, since both make behaviour depend on the machine.
+    example:
+      bad: |
+        # domain/order.py
+        from sqlalchemy import select
+        import os
+
+        def place(cmd: Command) -> Order:
+            rate = float(os.environ["TAX_RATE"])   # environment in the domain
+            session.execute(select(...))           # and a database
+      good: |
+        # domain/order.py
+        def place(cmd: Command, tax_rate: Decimal) -> Order:
+            if not cmd.lines:
+                raise EmptyOrder()
+            return Order(id=cmd.id, lines=cmd.lines, tax_rate=tax_rate)
 
   - id: dependencies-point-inward
     group: dependency
@@ -53,6 +74,21 @@ rules:
     body: >-
       `adapters` may import `application`; `application` may import `domain`.
       Never the reverse, and never around a layer to skip one.
+    help: >-
+      The one-way rule is what lets the domain import and run with nothing else in the
+      project present. Once it reaches outward for a repository or a schema, that
+      isolation is gone and the layering is only a folder convention. Skipping a layer
+      is the same failure more quietly: it couples two things the middle layer existed
+      to keep apart.
+    example:
+      lang: text
+      bad: |
+        adapters  ->  application  ->  domain
+                          domain    ->  adapters    # for one model
+        adapters  ->  domain                        # skipping application
+      good: |
+        adapters  ->  application  ->  domain
+                                       domain -> (stdlib only)
 
   - id: ports-are-protocols
     group: dependency
@@ -62,6 +98,25 @@ rules:
       An outbound dependency is a `Protocol` in the application layer, satisfied
       structurally by the adapter. The adapter imports the application; the
       application imports nothing of the adapter.
+    help: >-
+      A Protocol is satisfied structurally, so the adapter never has to import the
+      application to declare that it conforms, and the application never has to import
+      the adapter to use it. That is what actually inverts the dependency. It also keeps
+      the interface shaped by the use case rather than by the driver, and makes a test
+      double an ordinary class rather than a mock.
+    example:
+      bad: |
+        # application/use_cases.py
+        from adapters.db import SqlOrderRepo   # application -> adapters
+      good: |
+        # application/ports.py
+        class Orders(Protocol):
+            def by_id(self, order_id: OrderId) -> Order | None: ...
+            def save(self, order: Order) -> None: ...
+
+        # adapters/db.py - no import of ports needed
+        class SqlOrders:
+            def by_id(self, order_id: OrderId) -> Order | None: ...
 
   - id: no-relative-imports-across-packages
     group: dependency
@@ -71,6 +126,16 @@ rules:
       `from ...adapters.outbound import x` reaching across a package is a
       boundary violation in disguise. Use an absolute import of the package's
       public entry point.
+    help: >-
+      `from ...adapters import x` is a boundary crossing written in path syntax, which
+      is exactly what makes it easy to miss in review: it does not name the package it
+      reaches into. It also breaks when a module moves. An absolute import of the
+      package's entry point states the dependency plainly and survives reorganisation.
+    example:
+      bad: |
+        from ...adapters.outbound.postgres import OrderRepo
+      good: |
+        from myapp.application import place_order
 
   - id: adapters-do-not-import-adapters
     group: dependency
@@ -79,6 +144,26 @@ rules:
     body: >-
       An inbound adapter must not import an outbound adapter, or the reverse.
       They communicate through the application layer.
+    help: >-
+      A handler calling the database directly skips the layer that owns the use case,
+      and with it the transaction boundary and the authorisation check. The behaviour
+      also becomes reachable only over HTTP, so a worker or a management command doing
+      the same job has to reimplement it and the two copies drift apart.
+    example:
+      bad: |
+        # adapters/http/orders.py
+        from adapters.db import session
+
+        @app.post("/orders")
+        async def create(body: dict) -> dict:
+            return session.execute(insert(orders).values(**body))
+      good: |
+        # adapters/http/orders.py
+        from myapp.application import place_order
+
+        @app.post("/orders")
+        async def create(body: CreateOrderRequest) -> OrderResponse:
+            return OrderResponse.from_domain(await place_order(body.to_command()))
 
   - id: no-domain-types-over-the-wire
     group: responsibility
@@ -87,6 +172,18 @@ rules:
     body: >-
       Inbound adapters own their request and response models. Dumping a domain
       dataclass makes every internal rename a breaking API change.
+    help: >-
+      Dumping a domain dataclass publishes every field it happens to carry, now and in
+      future. A rename becomes a breaking API change, and a field added for internal
+      bookkeeping becomes an unintended disclosure in the same commit that added it. An
+      explicit response model makes the API surface a decision rather than an accident.
+    example:
+      bad: |
+        return asdict(order)
+        # ships internal_margin and supplier_cost too
+      good: |
+        return OrderResponse.from_domain(order)
+        # id, status, total - chosen, not inherited
 
   - id: adapters-translate-only
     group: responsibility
@@ -95,6 +192,24 @@ rules:
     body: >-
       An adapter converts between transport or storage shapes and application
       types. Business decisions belong in the domain or the use case.
+    help: >-
+      A rule inside a request handler is reachable only through that transport, so the
+      same decision gets duplicated in every other entry point and the copies drift. It
+      also drags the web framework into the test for a business rule. Keep the handler
+      to parsing in and formatting out.
+    example:
+      bad: |
+        @app.post("/orders")
+        async def create(body: CreateOrderRequest, user: User = Depends(current_user)):
+            if body.total > 1000 and not user.verified:
+                raise HTTPException(400, "needs verification")   # a business rule
+            ...
+      good: |
+        @app.post("/orders")
+        async def create(body: CreateOrderRequest, user: User = Depends(current_user)):
+            order = await place_order(body.to_command(user.id))
+            return OrderResponse.from_domain(order)
+        # place_order enforces the verification rule
 
   - id: composition-root-only-wiring
     group: responsibility
@@ -104,6 +219,22 @@ rules:
       Modules receive their dependencies as arguments. Only
       `{{python_package}}.config` constructs concrete implementations and reads
       settings.
+    help: >-
+      A module that constructs its own dependencies also chooses them, so it cannot be
+      tested against a stub or reused with a different implementation. Concentrating
+      construction in one place makes startup order explicit and gives you a single file
+      to read to see how the system is actually assembled.
+    example:
+      bad: |
+        # application/use_cases.py
+        from adapters.db import SqlOrders
+        orders = SqlOrders()      # hard-wired at import time
+      good: |
+        # application/use_cases.py
+        def make_place_order(orders: Orders) -> PlaceOrder: ...
+
+        # config/container.py
+        place_order = make_place_order(SqlOrders(engine))
 
   - id: settings-parsed-once
     group: responsibility
@@ -113,3 +244,21 @@ rules:
       Configuration is parsed and validated once, into a frozen settings object.
       An `os.environ` lookup buried in a function makes behaviour depend on when
       it runs.
+    help: >-
+      An `os.environ` lookup inside a function makes behaviour depend on when the
+      function runs and on what the process happened to inherit, which is why it works
+      locally and fails in the container. Parsing once at startup turns a missing or
+      malformed variable into an immediate, obvious boot failure instead of an error on
+      the first request that reaches that line.
+    example:
+      bad: |
+        def send(msg: str) -> None:
+            url = os.environ["WEBHOOK_URL"]   # KeyError on first use, in prod
+            ...
+      good: |
+        @dataclass(frozen=True)
+        class Settings:
+            webhook_url: str
+
+        def load_settings() -> Settings:      # called once, at startup
+            return Settings(webhook_url=os.environ["WEBHOOK_URL"])

@@ -34,6 +34,26 @@ rules:
     body: >-
       Override both or neither. An object that breaks the contract behaves
       unpredictably in every hash-based collection.
+    help: >-
+      HashMap and HashSet find a candidate by hash bucket first and only then call
+      equals. If two equal objects hash differently they land in different buckets, so
+      the lookup never even reaches the equals call and the map appears to lose entries
+      it definitely contains. Override both, or let a record or Lombok generate the
+      pair.
+    example:
+      bad: |
+        final class Sku {
+            private final String code;
+            @Override public boolean equals(Object o) {
+                return o instanceof Sku s && code.equals(s.code);
+            }
+            // no hashCode: inherits Object identity
+        }
+        Set.of(new Sku("A1")).contains(new Sku("A1"));  // false
+      good: |
+        record Sku(String code) { }   // equals and hashCode together
+
+        Set.of(new Sku("A1")).contains(new Sku("A1"));  // true
 
   - id: ap-float-for-money
     group: correctness
@@ -42,12 +62,38 @@ rules:
     body: >-
       Use `BigDecimal` or an integer minor-unit representation. `double` cannot
       represent decimal fractions exactly and silently loses cents.
+    help: >-
+      Binary floating point cannot represent 0.1 exactly, so decimal arithmetic
+      accumulates error that shows up as a cent missing from a total or an invoice that
+      does not reconcile. BigDecimal is exact when constructed from a string, and minor
+      units (an int of cents) are exact and faster. Never construct BigDecimal from a
+      double, which just imports the error.
+    example:
+      bad: |
+        double total = 0.1 + 0.2;         // 0.30000000000000004
+        BigDecimal b = new BigDecimal(0.1); // 0.1000000000000000055511151231...
+      good: |
+        BigDecimal total = new BigDecimal("0.1").add(new BigDecimal("0.2"));
+        // 0.3 exactly
+        long cents = 10L + 20L;   // or work in minor units throughout
 
   - id: ap-string-equality-by-reference
     group: correctness
     severity: hard
     title: Don't compare strings with ==
     body: Compare with `equals`. Reference equality on strings works until it does not.
+    help: >-
+      `==` compares references. Compile-time literals are interned so they often share
+      one, which is exactly what makes this bug dangerous: it passes in tests written
+      with literals and fails on the first string that arrives from a request body, a
+      file or a database. Use equals, or Objects.equals when either side may be null.
+    example:
+      bad: |
+        if (role == "admin") { ... }
+        // true for a literal, false for the same text off the wire
+      good: |
+        if ("admin".equals(role)) { ... }
+        // or Objects.equals(role, "admin")
 
   - id: ap-catching-throwable
     group: correctness
@@ -57,6 +103,26 @@ rules:
       Catch the narrowest exception you can handle. Catching `Throwable` also traps
       `OutOfMemoryError` and `StackOverflowError`, which you cannot meaningfully
       recover from.
+    help: >-
+      Throwable includes Error, which signals conditions the JVM cannot continue from:
+      OutOfMemoryError, StackOverflowError, LinkageError. Catching them converts a fast,
+      obvious crash into a process that limps along with corrupt state and misleading
+      logs. Catch the specific exceptions you have a real response to and let the rest
+      propagate.
+    example:
+      bad: |
+        try {
+            process(batch);
+        } catch (Throwable t) {
+            log.warn("batch failed", t);   // also swallows OOM
+        }
+      good: |
+        try {
+            process(batch);
+        } catch (IOException | BatchFormatException e) {
+            log.warn("batch failed", e);
+            throw new BatchRejected(batch.id(), e);
+        }
 
   - id: ap-anemic-domain
     group: design
@@ -65,6 +131,32 @@ rules:
     body: >-
       A class of getters and setters with all behaviour in a service is a data
       structure, not a domain object. Put the invariant next to the state it protects.
+    help: >-
+      When state is public and the rules that protect it live elsewhere, nothing stops a
+      second caller from mutating the object into an invalid state, and the invariant
+      ends up re-implemented in every service that touches the type. Moving the rule
+      onto the type makes the invalid state unreachable rather than merely discouraged.
+    example:
+      bad: |
+        class Order { public List<Line> lines; public Status status; }
+
+        class OrderService {
+            void addLine(Order o, Line l) {
+                if (o.status != Status.DRAFT) throw new IllegalStateException();
+                o.lines.add(l);   // any other caller can skip this check
+            }
+        }
+      good: |
+        class Order {
+            private final List<Line> lines = new ArrayList<>();
+            private Status status = Status.DRAFT;
+
+            void addLine(Line line) {
+                if (status != Status.DRAFT) throw new OrderAlreadyPlaced(id);
+                lines.add(line);
+            }
+            List<Line> lines() { return List.copyOf(lines); }
+        }
 
   - id: ap-utility-class-dumping-ground
     group: design
@@ -73,6 +165,22 @@ rules:
     body: >-
       A class named `Utils` or `Helper` accumulates unrelated behaviour. Give the
       function a home on the type it operates on.
+    help: >-
+      A name that describes nothing attracts everything: `Utils` has no criterion for
+      what belongs, so it grows without bound and becomes a dependency of the whole
+      codebase. That kills modularity, since importing one helper drags the whole class
+      in. Put the function on the type it operates on, or in a small class named for the
+      one thing it does.
+    example:
+      bad: |
+        final class Utils {
+            static String slugify(String s) { ... }
+            static BigDecimal vat(Money m) { ... }
+            static Connection connect() { ... }
+        }
+      good: |
+        record Slug(String value) { static Slug of(String s) { ... } }
+        final class VatRate { Money applyTo(Money net) { ... } }
 
   - id: ap-boolean-parameters
     group: design
@@ -81,6 +189,20 @@ rules:
     body: >-
       `send(true)` is unreadable at the call site and usually signals two methods
       squeezed into one. Split them or pass an enum.
+    help: >-
+      At the call site a bare `true` carries no information: the reader has to open the
+      method to learn what it selects. It is also a reliable sign that one method is
+      doing two jobs, since the flag almost always picks between two branches that share
+      little. An enum makes the call self-describing and leaves room for a third case
+      later.
+    example:
+      bad: |
+        notifier.send(user, true, false);
+        // which is which?
+      good: |
+        notifier.sendImmediately(user);
+        // or
+        notifier.send(user, Channel.EMAIL, Priority.NORMAL);
 
   - id: ap-inheritance-for-reuse
     group: design
@@ -89,6 +211,24 @@ rules:
     body: >-
       Extend to express a genuine subtype, not to borrow a method. Prefer
       composition; it does not couple you to the parent's future.
+    help: >-
+      Extending a class inherits its entire surface, not just the method you wanted, and
+      permanently couples you to its future: a new method on the parent silently becomes
+      part of your API, and a changed one silently changes your behaviour. Composition
+      gives you the same reuse while keeping the surface you expose under your own
+      control.
+    example:
+      bad: |
+        class AuditedList extends ArrayList<String> {
+            @Override public boolean add(String s) { audit(s); return super.add(s); }
+            // addAll bypasses this in some JDK versions; callers see 40 inherited methods
+        }
+      good: |
+        final class AuditedList {
+            private final List<String> delegate = new ArrayList<>();
+            void add(String s) { audit(s); delegate.add(s); }
+            List<String> asList() { return List.copyOf(delegate); }
+        }
 
   - id: ap-thread-sleep-for-coordination
     group: concurrency
@@ -97,6 +237,20 @@ rules:
     body: >-
       Sleeping until another thread is probably ready is a race, most visibly in
       tests. Use a latch, a future, or an awaiting assertion.
+    help: >-
+      A sleep encodes a guess about how long something takes, so it is simultaneously
+      too long on a fast machine and too short on a loaded CI runner. The result is a
+      suite that is both slow and intermittently red, and the usual repair is a longer
+      sleep, which makes both worse. Wait on the actual condition instead.
+    example:
+      bad: |
+        worker.submit(job);
+        Thread.sleep(500);            // usually enough
+        assertTrue(job.isDone());     // flaky under load
+      good: |
+        CountDownLatch done = new CountDownLatch(1);
+        worker.submit(job, done::countDown);
+        assertTrue(done.await(5, TimeUnit.SECONDS));
 
   - id: ap-unbounded-thread-creation
     group: concurrency
@@ -105,6 +259,20 @@ rules:
     body: >-
       Use a bounded executor or virtual threads. Unbounded thread creation turns a
       traffic spike into resource exhaustion.
+    help: >-
+      Each platform thread costs about a megabyte of stack plus scheduling overhead, so
+      a thread per request means load translates directly into memory pressure. Under a
+      spike the machine starts thrashing precisely when it is busiest. A bounded pool
+      degrades instead: work queues and latency rises, but the process stays alive.
+    example:
+      bad: |
+        for (Request r : incoming) {
+            new Thread(() -> handle(r)).start();   // 10k requests, 10k threads
+        }
+      good: |
+        ExecutorService pool = Executors.newFixedThreadPool(32);
+        // or Executors.newVirtualThreadPerTaskExecutor() on Java 21+
+        for (Request r : incoming) pool.submit(() -> handle(r));
 
   - id: ap-synchronizing-on-shared-literal
     group: concurrency
@@ -113,6 +281,20 @@ rules:
     body: >-
       Never lock on a string literal, a boxed primitive, or a field that gets
       reassigned. Lock on a private final object.
+    help: >-
+      String literals and small boxed integers are interned, so a lock on one is shared
+      with every unrelated piece of code that happens to lock on the same value,
+      including in libraries you did not write. Locking on a reassignable field is the
+      opposite failure: once the field changes, two threads hold two different monitors
+      and the mutual exclusion quietly evaporates.
+    example:
+      bad: |
+        private Object lock = new Object();
+        synchronized (lock) { ... }        // lock may be reassigned
+        synchronized ("ORDERS") { ... }    // interned and globally shared
+      good: |
+        private final Object lock = new Object();
+        synchronized (lock) { ... }
 
   - id: ap-trusting-client-input
     group: security
@@ -122,6 +304,23 @@ rules:
       Re-check authorization against the authenticated principal on every request.
       An id in the payload proves nothing about who may access it.
     source: OWASP C1
+    help: >-
+      An id in a request body says which record the caller wants, never that they are
+      entitled to it. Changing one digit is the entire attack, and it needs no tooling.
+      Authorize against the authenticated principal on every request: not once at login,
+      not only on the page that produced the link, but at the point the record is read.
+    example:
+      bad: |
+        @GetMapping("/invoices/{id}")
+        Invoice get(@PathVariable long id) {
+            return repo.findById(id).orElseThrow();   // any id, any tenant
+        }
+      good: |
+        @GetMapping("/invoices/{id}")
+        Invoice get(@PathVariable long id, @AuthenticationPrincipal User user) {
+            return repo.findByIdAndOwner(id, user.id())
+                       .orElseThrow(NotFound::new);   // not Forbidden: don't confirm it exists
+        }
 
   - id: ap-verbose-error-to-client
     group: security
@@ -131,3 +330,20 @@ rules:
       Return a stable, generic error to the client and keep the detail in the log.
       Stack traces disclose internals to anyone who can trigger a failure.
     source: OWASP C3
+    help: >-
+      A stack trace names your classes, packages, framework versions and often file
+      paths and SQL. Anyone who can make the endpoint fail gets that for free, which
+      turns error handling into a reconnaissance tool. Return one stable message plus a
+      correlation id, and log the detail where only you can read it.
+    example:
+      bad: |
+        catch (Exception e) {
+            return ResponseEntity.status(500).body(e.toString());
+        }
+      good: |
+        catch (Exception e) {
+            String traceId = MDC.get("traceId");
+            log.error("lookup failed trace={}", traceId, e);
+            return ResponseEntity.status(500)
+                .body(new ErrorResponse("Internal error", traceId));
+        }

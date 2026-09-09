@@ -43,21 +43,14 @@
   {{ wiz.nav(back_action, next_label) }}
 </form>
 
+{{ wiz.rule_help_modal() }}
+
+{# Help text for this step's rules only. Inlined rather than fetched so the
+   wizard keeps needing no server-side state. #}
+<script type="application/json" id="rule-help-data">{{ rule_help | tojson }}</script>
+
 {% endblock %}
 
 {% block page_script %}
-<script>
-(function () {
-  var link = document.getElementById('toggle-all');
-  if (!link) return;
-  var cats = document.querySelectorAll('details.rule-category');
-  var expand = true;
-  link.addEventListener('click', function (e) {
-    e.preventDefault();
-    Array.prototype.forEach.call(cats, function (d) { d.open = expand; });
-    expand = !expand;
-    link.textContent = expand ? 'Expand all' : 'Collapse all';
-  });
-})();
-</script>
+<script src="/dashboard/static/wizard_rules.js"></script>
 {% endblock %}

@@ -655,9 +655,7 @@ def build_dashboard_routes(
         """
         import scaffold_service
 
-        owner_labels = {
-            d.doc: d.display_label for d in scaffold_service.get_base().rule_docs
-        }
+        owner_labels = {d.doc: d.display_label for d in scaffold_service.get_base().rule_docs}
         sections = []
         for doc in pack.rule_docs:
             if (doc.doc == "core/git.md") != git:
@@ -665,11 +663,42 @@ def build_dashboard_routes(
             sections.append((doc.display_label, doc))
         if not git:
             for contribution in pack.contributions:
-                label = owner_labels.get(
-                    contribution.contributes_to, contribution.contributes_to
-                )
+                label = owner_labels.get(contribution.contributes_to, contribution.contributes_to)
                 sections.append((label, contribution))
         return sections
+
+    def _rule_help(sections) -> dict:
+        """Help-popup payload for the rules on one step, keyed by rule id.
+
+        Carries the document's friendly label rather than its path: the rendered
+        page is asserted never to contain the string "anti-patterns", and the
+        path form would leak it into the island.
+
+        Only the current step's pack is serialised, so this stays 30-60 rules.
+        """
+        payload = {}
+        for label, section in sections:
+            for rule in section.rules:
+                example = None
+                if rule.example is not None:
+                    example = {
+                        "lang": rule.example.lang,
+                        "bad": rule.example.bad,
+                        "good": rule.example.good,
+                        "caption": rule.example.caption,
+                    }
+                payload[rule.id] = {
+                    "title": rule.title,
+                    "severity": rule.severity,
+                    "locked": rule.locked,
+                    "rule_id": rule.local_id,
+                    "source": rule.source,
+                    "body": rule.body,
+                    "help": rule.help_text,
+                    "example": example,
+                    "doc_label": label,
+                }
+        return payload
 
     async def project_new_view(request: Request) -> Response:
         """Step 1. Also serves POST, so Back from step 2 returns here intact."""
@@ -718,8 +747,11 @@ def build_dashboard_routes(
             request,
             "wizard_languages.html",
             _wizard_ctx(
-                request, "languages", state,
-                languages=scaffold_service.list_languages(), errors=errors,
+                request,
+                "languages",
+                state,
+                languages=scaffold_service.list_languages(),
+                errors=errors,
             ),
             status_code=400,
         )
@@ -774,8 +806,13 @@ def build_dashboard_routes(
             request,
             "wizard_rules.html",
             _wizard_ctx(
-                request, pack.id, state,
-                pack=pack, sections=sections, field="language_rule",
+                request,
+                pack.id,
+                state,
+                pack=pack,
+                sections=sections,
+                field="language_rule",
+                rule_help=_rule_help(sections),
                 heading=("Shared rules" if pack.kind == "base" else f"{pack.title} rules"),
                 blurb=(
                     "Rules that apply whatever the language."
@@ -807,8 +844,13 @@ def build_dashboard_routes(
             request,
             "wizard_rules.html",
             _wizard_ctx(
-                request, "git", state,
-                pack=base, sections=sections, field="git_rule",
+                request,
+                "git",
+                state,
+                pack=base,
+                sections=sections,
+                field="git_rule",
+                rule_help=_rule_help(sections),
                 heading="Git rules",
                 blurb="How a change reaches the default branch. These become core/git.md.",
             ),
@@ -867,8 +909,12 @@ def build_dashboard_routes(
             request,
             "wizard_review.html",
             _wizard_ctx(
-                request, "review", state,
-                base=base, languages=languages, documents=documents,
+                request,
+                "review",
+                state,
+                base=base,
+                languages=languages,
+                documents=documents,
                 # Edit links come from the sequence so they follow the selection.
                 rules_action=f"{_WIZARD_BASE}/rules/base",
                 workflows_action=f"{_WIZARD_BASE}/workflows",

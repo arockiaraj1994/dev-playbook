@@ -66,6 +66,38 @@ changes after 1.0.0 will bump the **major**.
   claimed 112 tests. `docker-compose.yml` image tag corrected from `0.8.0`.
 - Tests: 522 → 601.
 
+### Added - per-rule help popups in the create-standards wizard
+
+- **Every rule row in the wizard now has a help affordance.** The picker asks a
+  user to accept or reject 290 rules from one compressed sentence each; that
+  sentence cannot be lengthened, because `_bullet()` writes it verbatim into the
+  generated markdown. Rules now also carry `help:` (two to four sentences on what
+  goes wrong without the rule) and `example:` (a do/don't pair), shown in a modal.
+- **Placement is a hover-revealed glyph in a right-hand gutter**, invisible until
+  the row is hovered or focused and pinned visible on touch, so 50+ rows do not
+  become a wall of icons. It uses `opacity` rather than `display`, so it stays
+  focusable and in the accessibility tree while invisible.
+- **The icon is never dead.** With no authored help the modal falls back to the
+  rule's title, severity, id, source, full body and target document.
+- **Help never reaches the generated markdown.** It is authoring metadata for the
+  picker only - not merely to save the agent's context, but because `source_hash`
+  provenance means any change to the generated bullet invalidates every stored
+  document's hash. A byte-identity test pins this.
+- **Content authored for `base`, `java`, `typescript` and `python`** (161 rules).
+  `go`, `kotlin` and `rust` run on the fallback and are listed as exempt in
+  `_PACKS_WITHOUT_HELP`, so a coverage test stops the authored packs regressing.
+
+### Changed - per-rule help popups
+
+- `rule_row` in `_wizard.html` is a `<div>` with an inner `<label>` rather than a
+  `<label>` wrapping everything: a `<button>` inside a `<label>` activates that
+  label, so a nested help trigger would have toggled the checkbox on every click.
+- The modal CSS moved from page-scoped `.sd-modal-*` in `standard_detail.css` to
+  a shared `.modal-*` component in `style.css`, since the wizard does not load
+  that sheet. `standard_detail.html`/`.js` updated to the new class names.
+- The wizard's inline expand/collapse-all script moved into a new
+  `dashboard/static/wizard_rules.js` alongside the dialog behaviour.
+
 ### Added - Python, Go and Rust template packs
 - **Three new language packs** under `mcp/templates/languages/`, authored
   against `mcp/templates/TEMPLATE_SPEC.md` and matching the breadth of the

@@ -33,6 +33,20 @@ rules:
     body: >-
       If module A depends on B, B must not depend on A, directly or through a
       chain. Break the cycle by moving the shared type or inverting a dependency.
+    help: >-
+      A cycle means neither module can be built, tested or reasoned about on its own: a
+      change in either can break the other, and nothing tells you which one owns the
+      shared concept. Break it by moving the shared type down into a third module both
+      depend on, or by inverting one direction behind an interface the lower module
+      owns.
+    example:
+      lang: text
+      bad: |
+        billing  ->  orders
+        orders   ->  billing      # cycle: neither can compile alone
+      good: |
+        billing  ->  orders
+        orders   ->  money        # shared type moved down
 
   - id: one-way-dependencies
     group: universal
@@ -42,6 +56,20 @@ rules:
     body: >-
       Every language section below states its direction. Nothing may depend
       outward against it, and no module may reach around a layer to skip one.
+    help: >-
+      Layering only buys you anything if it holds in one direction. Once a lower layer
+      imports a higher one, the lower layer can no longer be tested or reused without
+      dragging the whole stack along. Reaching around a layer is the same failure in
+      slower motion: it couples two things that were meant to be separated by the layer
+      you skipped.
+    example:
+      lang: text
+      bad: |
+        domain  ->  web         # domain reaches up for a DTO
+        web     ->  persistence # web skips the service layer
+      good: |
+        web  ->  service  ->  domain
+        persistence  ->  domain
 
   - id: boundaries-own-their-types
     group: universal
@@ -50,6 +78,21 @@ rules:
     body: >-
       A module that faces the outside world defines its own request, response and
       storage shapes. Internal types are never serialized directly.
+    help: >-
+      Serializing an internal type makes every field of it part of your public contract
+      by accident, so a rename becomes a breaking change and a newly added field becomes
+      an unintended disclosure. Declaring the boundary's own request, response and
+      storage shapes costs a mapping function and buys you the freedom to change the
+      inside.
+    example:
+      lang: text
+      bad: |
+        GET /users/1  ->  returns the ORM entity directly
+                          (passwordHash and internalNotes leak;
+                           renaming a column breaks every client)
+      good: |
+        GET /users/1  ->  returns UserResponse
+                          (explicit fields, mapped from the entity)
 
   - id: shared-code-is-deliberate
     group: universal
@@ -58,3 +101,19 @@ rules:
     body: >-
       Before extracting something into a shared module, check the two callers
       genuinely need the same thing. Coincidental similarity is not reuse.
+    help: >-
+      Two pieces of code that look alike today may be alike only by accident. Once they
+      share an implementation, every future change has to serve both callers, and the
+      usual outcome is a flag parameter, then two, then a function nobody can safely
+      change. Duplication is cheaper than the wrong abstraction: extract when the
+      callers share a reason to change, not merely a shape.
+    example:
+      lang: text
+      bad: |
+        formatMoney(amount, forInvoice, compact, withSymbol)
+          # four flags because invoices and receipts were merged
+          # after looking similar once
+      good: |
+        formatInvoiceTotal(amount)
+        formatReceiptLine(amount)
+          # separate reasons to change, separate functions

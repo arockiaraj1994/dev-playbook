@@ -29,6 +29,19 @@ rules:
     locked: true
     title: The verification script passes
     body: Every gate script for the languages in this project exits zero.
+    help: >-
+      The gate script is the project's own definition of "builds correctly", collected
+      in one runnable place so nobody has to remember the list. Running it before you
+      hand the work over means the reviewer spends their attention on the design rather
+      than on a lint error, and CI stops being where you discover basic mistakes.
+    example:
+      lang: text
+      bad: |
+        $ git push        # CI finds the formatting error 6 minutes later
+      good: |
+        $ ./gates/verify-python.sh
+        ok
+        $ git push
 
   - id: dod-tests-pass
     group: mechanical
@@ -36,12 +49,34 @@ rules:
     locked: true
     title: All tests pass
     body: The full suite passes locally, not just the tests you wrote.
+    help: >-
+      Your own tests passing only proves the new code does what you expected. The rest
+      of the suite is what tells you it did not quietly break something else, which is
+      exactly the failure a targeted test run cannot catch. Run the whole thing locally:
+      finding it now is minutes, finding it after merge is a revert.
+    example:
+      lang: text
+      bad: |
+        $ pytest tests/test_my_new_feature.py   # 4 passed
+      good: |
+        $ pytest                                # 601 passed
 
   - id: dod-no-new-warnings
     group: mechanical
     severity: soft
     title: No new build or lint warnings
     body: Build and lint warnings introduced by the change are addressed, not ignored.
+    help: >-
+      Warnings work only while they are rare. A build that prints forty of them trains
+      everyone to scroll past all forty, so the one that mattered goes unread and the
+      tool stops earning its keep. Fix the ones your change introduced, or suppress them
+      narrowly with a reason.
+    example:
+      lang: text
+      bad: |
+        build: 41 warnings   # 3 are new, nobody will notice
+      good: |
+        build: 38 warnings   # the 3 new ones fixed
 
   - id: dod-new-code-tested
     group: correctness
@@ -50,12 +85,41 @@ rules:
     body: >-
       Every new branch of behaviour is covered by a test that fails without the
       change. A bug fix starts with a test that reproduces the bug.
+    help: >-
+      A test that passes both before and after your change proves nothing about your
+      change. Writing it so it fails first is what demonstrates it is actually
+      exercising the new behaviour, and for a bug fix it is also what proves you
+      reproduced the bug rather than something adjacent to it.
+    example:
+      lang: text
+      bad: |
+        # written after the fix, never seen to fail
+        def test_discount():
+            assert cart.total() > 0
+      good: |
+        # fails on the old code with 100.0 != 90.0
+        def test_ten_percent_discount_applies_once():
+            assert cart.total() == 90.0
 
   - id: dod-no-debug-output
     group: correctness
     severity: soft
     title: No stray debug output or TODOs
     body: Remove commented-out code, debug printing and scratch TODOs before finishing.
+    help: >-
+      Commented-out code is a question every future reader has to answer: is this coming
+      back, or was it forgotten? Version control already remembers it, so delete it.
+      Debug prints leak into logs and a scratch TODO with no owner and no ticket will
+      still be there in three years.
+    example:
+      lang: text
+      bad: |
+        print("HERE 2", payload)
+        # old_rate = 0.19
+        # TODO fix this properly
+      good: |
+        # nothing: the print is gone, the dead line deleted,
+        # and the TODO is issue #412
 
   - id: dod-docs-updated
     group: correctness
@@ -64,6 +128,19 @@ rules:
     body: >-
       If the change contradicts a rule in this corpus, fix whichever is wrong -
       do not leave the contradiction in place.
+    help: >-
+      A standard the code contradicts is worse than no standard, because readers cannot
+      tell which one to trust and stop trusting either. When the change and the
+      documented rule disagree, one of them is wrong: decide which, fix that one, and
+      leave the pair consistent.
+    example:
+      lang: text
+      bad: |
+        code: retries 5 times
+        docs: "we retry three times"     # left in place
+      good: |
+        code: retries 5 times
+        docs: "we retry five times"      # updated with the change
 
   - id: dod-no-new-secrets
     group: security
@@ -72,6 +149,17 @@ rules:
     title: No new secrets in source
     body: No credentials, tokens or keys were added to source or configuration.
     source: OWASP C2
+    help: >-
+      This is the checklist item that catches what the habit missed: a key pasted into a
+      test fixture while debugging, a connection string left in a sample config. Check
+      the diff itself rather than trusting your memory of it, because the cost of a miss
+      is rotation, not a follow-up commit.
+    example:
+      lang: text
+      bad: |
+        + TEST_API_KEY = "sk_live_..."    # real key, in a fixture
+      good: |
+        + TEST_API_KEY = os.environ.get("TEST_API_KEY", "sk_test_dummy")
 
   - id: dod-inputs-validated
     group: security
@@ -79,6 +167,17 @@ rules:
     title: New inputs are validated
     body: Any new field crossing a trust boundary is validated and bounded.
     source: OWASP C3
+    help: >-
+      New fields are where validation gaps appear, because the existing ones were
+      checked when they were new and the new one inherits the endpoint's reputation for
+      being safe. Bounded means more than well-typed: an integer that is allowed to be
+      four billion is still a denial-of-service parameter.
+    example:
+      lang: text
+      bad: |
+        page_size: int      # typed, unbounded; 10_000_000 is valid
+      good: |
+        page_size: int = Field(ge=1, le=100, default=20)
 
   - id: dod-dependencies-checked
     group: security
@@ -88,15 +187,52 @@ rules:
       Any added dependency is maintained, licence-compatible, and not a duplicate
       of something already present.
     source: OWASP C6
+    help: >-
+      Adding a dependency is a long-term commitment made in a moment: you inherit its
+      bugs, its vulnerabilities, its release cadence and its licence. Three questions
+      cover most of the risk. Is it still maintained, is its licence compatible with
+      ours, and do we already have something that does this?
+    example:
+      lang: text
+      bad: |
+        + requests-toolbelt   # for one helper; last release 2019
+                              # and we already depend on httpx
+      good: |
+        # use the httpx multipart support already present
 
   - id: dod-commits-conventional
     group: git
     severity: hard
     title: Commit messages follow the format
     body: Subjects use the Conventional Commits format and the branch is rebased and clean.
+    help: >-
+      The commit format is what lets release tooling derive a version and a changelog
+      without a human transcribing them. A clean rebased branch is the other half: it is
+      what makes the history readable afterwards, and what keeps `git bisect` able to
+      find the commit that broke something.
+    example:
+      lang: text
+      bad: |
+        fixes
+        more fixes
+        merge branch 'main' into feat/x
+      good: |
+        feat(cart): apply percentage discounts
+        test(cart): cover stacked discount rounding
 
   - id: dod-pr-reviewed
     group: git
     severity: hard
     title: Approved by a reviewer and checks are green
     body: At least one approval, and every required status check passing.
+    help: >-
+      The two halves catch different things: a reviewer catches what the machine cannot
+      judge, such as whether this is the right change at all, and the checks catch what
+      a reviewer cannot reliably see, such as a test that fails only on another
+      platform. Neither substitutes for the other, so both are required.
+    example:
+      lang: text
+      bad: |
+        1 approval  ·  2 checks failing  ·  merged anyway
+      good: |
+        1 approval  ·  all checks green  ·  merged

