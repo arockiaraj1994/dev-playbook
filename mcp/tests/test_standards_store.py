@@ -146,6 +146,43 @@ async def test_delete_missing_file_returns_false(store: StandardsStore):
     assert await store.delete_file("nope", "a.md") is False
 
 
+async def _seed_two_projects(store: StandardsStore) -> None:
+    for project, paths in (("keep", ["a.md", "b.md"]), ("doomed", ["a.md", "b.md", "c.md"])):
+        for path in paths:
+            await store.upsert_file(
+                project=project,
+                relative_path=path,
+                kind="markdown",
+                title="A",
+                body="x" * 100,
+                expected_version=None,
+            )
+
+
+async def test_delete_project_removes_every_document(store: StandardsStore):
+    await _seed_two_projects(store)
+
+    count = await store.delete_project("doomed")
+
+    assert count == 3
+    assert await store.get_project("doomed") is None
+    assert await store.list_files("doomed") == []
+
+
+async def test_delete_project_leaves_other_projects_alone(store: StandardsStore):
+    """The blast radius is exactly one project."""
+    await _seed_two_projects(store)
+
+    await store.delete_project("doomed")
+
+    assert await store.list_projects() == ["keep"]
+    assert len(await store.list_files("keep")) == 2
+
+
+async def test_delete_missing_project_returns_zero(store: StandardsStore):
+    assert await store.delete_project("nope") == 0
+
+
 async def test_list_files_ordered_by_path(store: StandardsStore):
     await store.upsert_file(
         project="p",

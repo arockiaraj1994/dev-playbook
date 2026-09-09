@@ -1,0 +1,133 @@
+doc: languages/java/anti-patterns.md
+label: Common mistakes
+merge: by-group
+title: Java anti-patterns - {{project}}
+description: Patterns to avoid when writing Java for {{project}}, and what to do instead.
+tags: [java, anti-patterns]
+intro: |
+  Know these before writing code. Each one is a defect this project has decided
+  not to accept, not a matter of taste.
+groups:
+  - id: correctness
+    title: Correctness
+  - id: design
+    title: Design
+  - id: concurrency
+    title: Concurrency
+  - id: security
+    title: Security
+outro: |
+  ```java
+  // Wrong: swallowed exception, raw type, concatenated SQL
+  try {
+      List items = repo.query("SELECT * FROM t WHERE id = " + id);
+  } catch (Exception e) { }
+
+  // Right: parameterized, typed, handled
+  List<Item> items = repo.findById(id);
+  ```
+rules:
+  - id: ap-equals-without-hashcode
+    group: correctness
+    severity: hard
+    title: Don't override equals without hashCode
+    body: >-
+      Override both or neither. An object that breaks the contract behaves
+      unpredictably in every hash-based collection.
+
+  - id: ap-float-for-money
+    group: correctness
+    severity: hard
+    title: Don't use double or float for money
+    body: >-
+      Use `BigDecimal` or an integer minor-unit representation. `double` cannot
+      represent decimal fractions exactly and silently loses cents.
+
+  - id: ap-string-equality-by-reference
+    group: correctness
+    severity: hard
+    title: Don't compare strings with ==
+    body: Compare with `equals`. Reference equality on strings works until it does not.
+
+  - id: ap-catching-throwable
+    group: correctness
+    severity: hard
+    title: Don't catch Throwable or Error
+    body: >-
+      Catch the narrowest exception you can handle. Catching `Throwable` also traps
+      `OutOfMemoryError` and `StackOverflowError`, which you cannot meaningfully
+      recover from.
+
+  - id: ap-anemic-domain
+    group: design
+    severity: soft
+    title: Don't put all the logic in services
+    body: >-
+      A class of getters and setters with all behaviour in a service is a data
+      structure, not a domain object. Put the invariant next to the state it protects.
+
+  - id: ap-utility-class-dumping-ground
+    group: design
+    severity: soft
+    title: Don't create catch-all Utils classes
+    body: >-
+      A class named `Utils` or `Helper` accumulates unrelated behaviour. Give the
+      function a home on the type it operates on.
+
+  - id: ap-boolean-parameters
+    group: design
+    severity: soft
+    title: Don't pass boolean flags as parameters
+    body: >-
+      `send(true)` is unreadable at the call site and usually signals two methods
+      squeezed into one. Split them or pass an enum.
+
+  - id: ap-inheritance-for-reuse
+    group: design
+    severity: soft
+    title: Don't use inheritance just to reuse code
+    body: >-
+      Extend to express a genuine subtype, not to borrow a method. Prefer
+      composition; it does not couple you to the parent's future.
+
+  - id: ap-thread-sleep-for-coordination
+    group: concurrency
+    severity: hard
+    title: Don't use Thread.sleep to wait for another thread
+    body: >-
+      Sleeping until another thread is probably ready is a race, most visibly in
+      tests. Use a latch, a future, or an awaiting assertion.
+
+  - id: ap-unbounded-thread-creation
+    group: concurrency
+    severity: hard
+    title: Don't create a new thread per request
+    body: >-
+      Use a bounded executor or virtual threads. Unbounded thread creation turns a
+      traffic spike into resource exhaustion.
+
+  - id: ap-synchronizing-on-shared-literal
+    group: concurrency
+    severity: hard
+    title: Don't lock on a string or a reassigned field
+    body: >-
+      Never lock on a string literal, a boxed primitive, or a field that gets
+      reassigned. Lock on a private final object.
+
+  - id: ap-trusting-client-input
+    group: security
+    severity: hard
+    title: Don't trust an id sent by the client
+    body: >-
+      Re-check authorization against the authenticated principal on every request.
+      An id in the payload proves nothing about who may access it.
+    source: OWASP C1
+
+  - id: ap-verbose-error-to-client
+    group: security
+    severity: hard
+    title: Don't return stack traces to callers
+    body: >-
+      Return a stable, generic error to the client and keep the detail in the log.
+      Stack traces disclose internals to anyone who can trigger a failure.
+    source: OWASP C3

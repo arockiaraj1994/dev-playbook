@@ -68,7 +68,9 @@ _VALID_BODY = (
 
 _REQUIRED_FILES = (
     "AGENTS.md",
+    "ARCHITECTURE.md",
     "core/guardrails.md",
+    "core/git.md",
     "core/definition-of-done.md",
     "core/glossary.md",
     "gates/README.md",
@@ -99,6 +101,32 @@ async def test_scan_project_missing_required(store: StandardsStore):
     assert status.indicator == "red"
     assert "AGENTS.md" in status.missing_required
     assert "workflows/new-feature.md" in status.missing_required
+
+
+@pytest.mark.parametrize("omitted", ["ARCHITECTURE.md", "core/git.md"])
+async def test_first_class_doc_is_required(store: StandardsStore, omitted: str):
+    """A project that ships every other required file is still red without this one."""
+    for path in _REQUIRED_FILES:
+        if path == omitted:
+            continue
+        await store.upsert_file(
+            project="incomplete",
+            relative_path=path,
+            kind="markdown",
+            title="Test Doc",
+            description="Valid description for the file.",
+            frontmatter="title: Test Doc\ndescription: Valid description for the file.",
+            body=_VALID_BODY,
+            expected_version=None,
+        )
+
+    status = await scan_project(store, "incomplete")
+    assert status.missing_required == [omitted]
+    assert status.indicator == "red"
+    assert any(
+        r.rule_id == "required-file" and not r.passed and omitted in r.message
+        for r in status.rule_results
+    )
 
 
 async def test_scan_project_healthy(store: StandardsStore):

@@ -1,0 +1,22 @@
+contributes_to: core/definition-of-done.md
+section: Java
+
+rules:
+  - id: dod-formatted
+    group: mechanical
+    severity: soft
+    title: Code is formatted
+    body: The formatter has been run and produces no further changes.
+
+  - id: dod-static-analysis
+    group: mechanical
+    severity: soft
+    title: The static analyser reports nothing new
+    body: No new findings from the configured analyzer.
+
+  - id: dod-public-api-documented
+    group: correctness
+    severity: soft
+    title: New public classes and methods have Javadoc
+    body: >-
+      New public types and methods carry a Javadoc summary fragment.

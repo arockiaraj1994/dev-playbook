@@ -1,0 +1,60 @@
+doc: ARCHITECTURE.md
+label: Architecture & boundaries
+merge: by-language
+title: Architecture - {{project}}
+description: Module boundaries, dependency direction, and where new code goes in {{project}}.
+tags: [architecture, boundaries]
+intro: |
+  This file owns module boundaries and dependency direction. Where another
+  document restates a boundary rule, this file wins.
+
+  | Language | Section |
+  | --- | --- |
+  {{language_rows}}
+groups:
+  - id: universal
+    title: Applies to every module
+  - id: dependency
+    title: Dependency rules
+  - id: responsibility
+    title: Layer responsibilities
+outro: |
+  ## Pointers
+
+  - `core/guardrails.md` - always-on rules that are not boundary rules.
+  - `core/git.md` - how a change reaches the default branch.
+  - `workflows/new-feature.md` - the order to build in.
+rules:
+  - id: no-cyclic-dependencies
+    group: universal
+    severity: hard
+    locked: true
+    title: Two modules must not depend on each other
+    body: >-
+      If module A depends on B, B must not depend on A, directly or through a
+      chain. Break the cycle by moving the shared type or inverting a dependency.
+
+  - id: one-way-dependencies
+    group: universal
+    severity: hard
+    locked: true
+    title: Lower layers must not import higher layers
+    body: >-
+      Every language section below states its direction. Nothing may depend
+      outward against it, and no module may reach around a layer to skip one.
+
+  - id: boundaries-own-their-types
+    group: universal
+    severity: hard
+    title: Don't expose internal classes to callers
+    body: >-
+      A module that faces the outside world defines its own request, response and
+      storage shapes. Internal types are never serialized directly.
+
+  - id: shared-code-is-deliberate
+    group: universal
+    severity: soft
+    title: Only share code when both callers need the same thing
+    body: >-
+      Before extracting something into a shared module, check the two callers
+      genuinely need the same thing. Coincidental similarity is not reuse.

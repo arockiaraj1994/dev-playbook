@@ -1,0 +1,226 @@
+doc: core/git.md
+label: Git practice
+merge: by-group
+title: Git practice - {{project}}
+description: Branching, commit, review and release rules for {{project}}.
+tags: [git, review, release, security]
+intro: |
+  How work moves from a local change to the default branch. These rules assume a
+  trunk-based flow: short-lived branches off one long-lived default branch.
+groups:
+  - id: commits
+    title: Commits
+  - id: branches
+    title: Branches
+  - id: review
+    title: Review
+  - id: release
+    title: Release
+  - id: security
+    title: Repository security
+outro: |
+  ```
+  feat(payments): add idempotency key to charge endpoint
+
+  Charges retried by the gateway created duplicate rows. The key is
+  stored with the payment and checked before insert.
+
+  BREAKING CHANGE: charge() now requires an idempotencyKey argument.
+  ```
+rules:
+  - id: conventional-commits
+    group: commits
+    severity: hard
+    locked: true
+    title: Start commit subjects with a type like feat or fix
+    body: >-
+      Every commit subject is `<type>[optional scope]: <description>`, using
+      `feat`, `fix`, `docs`, `refactor`, `test`, `build`, `ci`, `perf` or `chore`.
+      A breaking change is marked with `!` after the type or a `BREAKING CHANGE:`
+      footer.
+    source: Conventional Commits 1.0.0
+
+  - id: imperative-subject
+    group: commits
+    severity: soft
+    title: Write short commit subjects as commands
+    body: >-
+      Write the subject as a command - "add retry", not "added retry" - in around
+      50 characters, with no trailing full stop.
+
+  - id: explain-why-in-body
+    group: commits
+    severity: soft
+    title: Explain why in the commit body
+    body: >-
+      The diff already shows what changed. Use the body for the reason, the
+      alternative you rejected, and anything a future reader would otherwise have
+      to reconstruct.
+
+  - id: atomic-commits
+    group: commits
+    severity: hard
+    title: One logical change per commit
+    body: >-
+      Each commit builds and passes tests on its own. Split unrelated work rather
+      than bundling it, so it can be reviewed and reverted independently.
+
+  - id: no-wip-commits-on-main
+    group: commits
+    severity: soft
+    title: Clean up wip commits before merging
+    body: >-
+      Clean the branch up before merging. Squash the noise so the default branch
+      reads as a sequence of deliberate changes.
+
+  - id: short-lived-branches
+    group: branches
+    severity: hard
+    locked: true
+    title: Merge branches within a day or two
+    body: >-
+      Branch from the default branch, merge back within a day or two. Beyond that
+      a branch diverges and the merge becomes the risky part of the work.
+    source: Trunk Based Development
+
+  - id: no-direct-push-to-default
+    group: branches
+    severity: hard
+    locked: true
+    title: No direct pushes to the default branch
+    body: >-
+      Everything arrives through a pull request, including changes by
+      administrators. Protect the branch so this is enforced rather than agreed.
+    source: GitHub branch protection
+
+  - id: no-force-push-shared
+    group: branches
+    severity: hard
+    locked: true
+    title: Never force-push a shared branch
+    body: >-
+      Rewriting history someone else has pulled destroys their work. Force-push
+      only to a branch you alone are working on, and prefer `--force-with-lease`.
+
+  - id: rebase-before-merge
+    group: branches
+    severity: soft
+    title: Rebase onto the default branch before merging
+    body: >-
+      Resolve conflicts on your branch, not in the merge. A linear history makes
+      `git bisect` and `git log` worth using.
+
+  - id: descriptive-branch-names
+    group: branches
+    severity: soft
+    title: Branch names say what the work is
+    body: >-
+      Use a consistent shape such as `feat/short-description` or
+      `fix/ticket-id-short-description`.
+
+  - id: small-changes
+    group: review
+    severity: hard
+    title: Keep pull requests to a few hundred lines
+    body: >-
+      Around 100 changed lines is comfortable to review; 1000 is too large. A
+      reviewer may reject a change for size alone. Split it instead of asking them
+      to skim.
+    source: Google eng-practices
+
+  - id: review-before-merge
+    group: review
+    severity: hard
+    locked: true
+    title: At least one approving review
+    body: >-
+      No change reaches the default branch without another person approving it,
+      and the author never approves their own.
+
+  - id: review-within-one-day
+    group: review
+    severity: soft
+    title: Respond to a review within one business day
+    body: >-
+      Reviewing is not an interruption to the work, it is the work. Optimise for
+      how fast the team ships, not how fast one person writes code.
+    source: Google eng-practices
+
+  - id: green-before-merge
+    group: review
+    severity: hard
+    locked: true
+    title: Checks pass before merge
+    body: >-
+      Required status checks must be green. Never merge intending to fix the build
+      afterwards.
+
+  - id: pr-describes-intent
+    group: review
+    severity: soft
+    title: Say what changed and why in the pull request
+    body: >-
+      Say what changed, why, and how it was verified. Link the issue. A reviewer
+      should not have to ask what problem this solves.
+
+  - id: semver-releases
+    group: release
+    severity: soft
+    title: Number releases with semantic versioning
+    body: >-
+      `fix` maps to a patch release, `feat` to a minor, a breaking change to a
+      major. Tag the release commit.
+    source: Semantic Versioning 2.0.0
+
+  - id: maintain-changelog
+    group: release
+    severity: soft
+    title: Keep a changelog
+    body: >-
+      Record what changed for humans, grouped as Added, Changed, Fixed, Removed
+      and Security, newest first.
+    source: Keep a Changelog
+
+  - id: no-secrets-in-history
+    group: security
+    severity: hard
+    locked: true
+    title: Never commit a secret, and rotate if you do
+    body: >-
+      Removing a secret in a later commit does not remove it from history. Treat
+      anything committed as compromised: rotate it first, then purge.
+    source: OWASP C2
+
+  - id: secret-scanning-enabled
+    group: security
+    severity: hard
+    title: Secret scanning and push protection are on
+    body: >-
+      Block the push rather than discovering the leak later. Run the same check
+      locally as a pre-commit hook.
+    source: GitHub push protection
+
+  - id: signed-commits
+    group: security
+    severity: soft
+    title: Commits are signed
+    body: >-
+      Require verified signatures on the default branch so authorship cannot be
+      forged.
+
+  - id: no-build-artifacts-committed
+    group: security
+    severity: hard
+    title: No build output, dependencies or large binaries
+    body: >-
+      Keep them out with `.gitignore`. Committed artifacts bloat the clone
+      forever and drift from the source that produced them.
+
+  - id: pin-ci-actions
+    group: security
+    severity: soft
+    title: Pin CI actions to an exact commit
+    body: >-
+      Reference a full commit SHA, not a moving tag, and grant the workflow the
+      least permission it needs.
+    source: OWASP GitHub Actions Security

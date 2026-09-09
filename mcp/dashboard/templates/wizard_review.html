@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% import "_wizard.html" as wiz %}
+{% block title %}Review {{ state.project }}{% endblock %}
+{% block crumb %}<a href="/dashboard/standards" style="color:inherit">Standards</a> <span class="crumbs-sep">/</span> <a href="/dashboard/standards/new-project" style="color:inherit">New Project Standards</a> <span class="crumbs-sep">/</span> <span class="current">Review</span>{% endblock %}
+
+{% block content %}
+
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Review {{ state.project }}</h1>
+    <p class="page-sub">Exactly what will be created. Use Edit to change any step, or create the project.</p>
+  </div>
+</div>
+
+{{ wiz.stepper(steps, current_step) }}
+
+<form method="post" action="/dashboard/standards/new-project/create">
+  <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+  {{ wiz.carry(state) }}
+
+  <div class="card" style="padding:1.25rem;margin-bottom:16px">
+    <div class="review-head">
+      <h2 class="card-heading" style="margin:0">Project &amp; languages</h2>
+      <button type="submit" class="btn btn-ghost btn-sm"
+              formaction="/dashboard/standards/new-project" formnovalidate>Edit</button>
+    </div>
+    <table class="review-table">
+      <tr><th>Name</th><td><code>{{ state.project }}</code></td></tr>
+      <tr><th>Languages</th><td>
+        {% for pack in languages %}<span class="badge grey">{{ pack.title }} {{ pack.language_version }}</span> {% endfor %}
+      </td></tr>
+      {% for name, value in state.placeholders.items() %}
+      <tr><th>{{ name }}</th><td><code>{{ value }}</code></td></tr>
+      {% endfor %}
+    </table>
+  </div>
+
+  <div class="card" style="padding:1.25rem;margin-bottom:16px">
+    <div class="review-head">
+      <h2 class="card-heading" style="margin:0">Rules</h2>
+      <button type="submit" class="btn btn-ghost btn-sm"
+              formaction="{{ rules_action }}" formnovalidate>Edit</button>
+    </div>
+    <table class="review-table">
+      <tr><th>Language &amp; shared rules</th><td>{{ state.language_rules | length }} selected</td></tr>
+      <tr><th>Git rules</th><td>{{ state.git_rules | length }} selected</td></tr>
+    </table>
+  </div>
+
+  <div class="card" style="padding:1.25rem;margin-bottom:16px">
+    <div class="review-head">
+      <h2 class="card-heading" style="margin:0">Workflows</h2>
+      <button type="submit" class="btn btn-ghost btn-sm"
+              formaction="{{ workflows_action }}" formnovalidate>Edit</button>
+    </div>
+    <p style="margin:0;font-size:.8125rem">
+      {% for wid in state.workflows %}<code>{{ wid }}</code>{% if not loop.last %}, {% endif %}{% endfor %}
+    </p>
+  </div>
+
+  <div class="card" style="padding:1.25rem;margin-bottom:16px">
+    <h2 class="card-heading">Documents to create ({{ documents | length }})</h2>
+    <table class="review-table review-docs">
+      <thead><tr><th>Path</th><th>From</th><th>Rules</th></tr></thead>
+      <tbody>
+      {% for doc in documents %}
+      <tr>
+        <td><code>{{ doc.relative_path }}</code></td>
+        <td><span class="badge grey">{{ doc.pack }}</span></td>
+        <td>{% if doc.rule_ids %}{{ doc.rule_ids | length }}{% else %}&mdash;{% endif %}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="wizard-nav">
+    <button type="submit" class="btn btn-primary">Create {{ state.project }}</button>
+    <button type="submit" class="btn btn-ghost"
+            formaction="{{ workflows_action }}" formnovalidate>Back</button>
+    <a href="/dashboard/standards" class="btn btn-ghost">Cancel</a>
+  </div>
+</form>
+
+{% endblock %}

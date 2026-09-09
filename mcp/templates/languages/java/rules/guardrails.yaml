@@ -1,0 +1,38 @@
+contributes_to: core/guardrails.md
+section: Java
+
+rules:
+  - id: no-swallowed-exceptions
+    group: must_not
+    severity: hard
+    title: Never leave a catch block empty
+    body: >-
+      An empty catch block is a defect. Handle the exception, wrap and
+      rethrow it with context, or let it propagate - never discard it
+      silently.
+
+  - id: no-raw-types
+    group: must_not
+    severity: soft
+    title: Always give a generic type its parameter
+    body: >-
+      Always parameterize generic types. A raw `List` defeats compile-time
+      checking and forces unchecked casts on every use.
+
+  - id: no-mutable-shared-state
+    group: must_not
+    severity: hard
+    title: Guard any state shared between threads
+    body: >-
+      State reachable from more than one thread is immutable, confined, or
+      guarded by an explicit synchronization mechanism. Prefer
+      `java.util.concurrent` types over hand-rolled locking.
+
+  - id: no-null-returns-for-collections
+    group: must_not
+    severity: soft
+    title: Return an empty list instead of null
+    body: >-
+      Return an empty collection rather than null. Use `Optional` for a
+      genuinely absent single value, and never return `Optional` from a
+      field or collection.

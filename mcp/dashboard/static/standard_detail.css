@@ -1,6 +1,109 @@
-/* standard_detail.css - four-tab file viewer (Formatted/Source/Code/Edit),
-   frontmatter panel, and annotation-callout styling for the standards
+/* standard_detail.css - popup file viewer (Formatted/Source/Edit),
+   frontmatter/rules chips, and annotation-callout styling for the standards
    detail page. */
+
+.sd-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+/* One card per language (kotlin, python, ...) under the languages/ group,
+   holding that language's standards/testing/anti-patterns files together. */
+.language-cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.language-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  padding: 10px 12px;
+}
+.language-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-subtle);
+  margin-bottom: 8px;
+}
+.language-card-body {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.language-card-body .file-card {
+  flex: 0 1 auto;
+  margin-bottom: 0;
+}
+.language-card-body .file-summary {
+  width: auto;
+}
+
+.sd-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6vh 16px;
+}
+.sd-modal-overlay[hidden] { display: none; }
+
+.sd-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(10, 15, 30, 0.45);
+}
+
+.sd-modal-panel {
+  position: relative;
+  width: 100%;
+  max-width: 860px;
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-elevated, var(--surface, #fff));
+  border: 1px solid var(--border-strong, var(--border, #e5e7eb));
+  border-radius: var(--radius-lg, 12px);
+  box-shadow: var(--shadow-pop, 0 20px 60px rgba(0, 0, 0, 0.18));
+  overflow: hidden;
+}
+
+.sd-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border, #e5e7eb);
+  flex-shrink: 0;
+}
+
+.sd-modal-close {
+  border: none;
+  background: transparent;
+  font-size: 1.25rem;
+  line-height: 1;
+  color: var(--text-muted, #6b7280);
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+.sd-modal-close:hover { background: var(--bg-hover, #f3f4f6); color: var(--text); }
+
+.sd-modal-body {
+  padding: 16px;
+  overflow-y: auto;
+}
 
 .sd-panels {
   display: grid;
@@ -25,25 +128,43 @@
   color: var(--text-muted, #6b7280);
 }
 
-.frontmatter-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.8125rem;
+.sd-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
-.frontmatter-table th {
-  text-align: left;
-  vertical-align: top;
-  font-weight: 600;
-  color: var(--text-muted, #6b7280);
-  padding: 3px 10px 3px 0;
+.sd-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  padding: 3px 9px;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 999px;
+  background: var(--surface, #fff);
+  font-size: 0.75rem;
+  color: var(--text, #111827);
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.frontmatter-table td {
-  padding: 3px 0;
-  word-break: break-word;
+.sd-chip-key {
+  font-weight: 600;
+  color: var(--text-muted, #6b7280);
 }
+.sd-chip-key::after { content: ":"; }
+
+.sd-chip-rule .rule-id { color: var(--text-muted, #6b7280); }
+.sd-chip-rule .rule-severity {
+  text-transform: uppercase;
+  font-size: 0.625rem;
+  letter-spacing: 0.03em;
+  color: var(--text-subtle, #9ca3af);
+}
+.sd-chip-rule.rule-fail { border-color: var(--red-200, #fecaca); }
+.sd-chip-rule .indicator-dot { flex-shrink: 0; }
 
 .sd-tabs {
   display: flex;
@@ -80,8 +201,7 @@
   min-height: 80px;
 }
 
-.sd-panel-source pre,
-.sd-panel-code pre {
+.sd-panel-source pre {
   margin: 0;
   white-space: pre-wrap;
   word-break: break-word;

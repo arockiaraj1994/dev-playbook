@@ -17,7 +17,7 @@ import logging
 import sqlite3
 import time
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -55,6 +55,30 @@ _SCHEMA = (
     "CREATE INDEX IF NOT EXISTS ix_standards_files_project ON standards_files(project)",
 )
 
+# Added by migration rather than in _SCHEMA, so existing DBs pick them up too.
+# All are nullable TEXT: a hand-made project simply has no provenance.
+_PROJECT_PROVENANCE_COLUMNS = (
+    "template_id",
+    "template_version",
+    "language",
+    "language_version",
+    # JSON array of every pack that took part: [{id, kind, version}, ...].
+    # template_id/language hold the first selected language, for display.
+    "packs",
+)
+
+# source_hash is the sha256 of the content as scaffolded. Comparing it to a
+# re-hash of the current body is what later distinguishes "untouched, safe to
+# update from upstream" from "locally edited, needs a merge".
+_FILE_PROVENANCE_COLUMNS = (
+    "source_template",
+    "source_version",
+    "source_hash",
+    "source_rule_ids",
+    # Which pack produced this document - base, or a specific language.
+    "source_pack",
+)
+
 
 # ---------------------------------------------------------------------------
 # Data classes
@@ -66,6 +90,12 @@ class ProjectRow:
     name: str
     indicator: str
     updated_at: int
+    # Provenance: set when the project was scaffolded from a template, else None.
+    template_id: str | None = None
+    template_version: str | None = None
+    language: str | None = None
+    language_version: str | None = None
+    packs: list[dict] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -81,6 +111,14 @@ class FileRow:
     version: int
     updated_at: int
     updated_by: str | None
+
+
+class ProjectExists(Exception):
+    """Raised when scaffolding would overwrite an existing project."""
+
+    def __init__(self, project: str) -> None:
+        self.project = project
+        super().__init__(f"project '{project}' already exists")
 
 
 class VersionConflict(Exception):
@@ -156,6 +194,16 @@ class StandardsStore:
         with _connect(self._path) as conn:
             for stmt in _SCHEMA:
                 conn.execute(stmt)
+            # Migrate: template provenance columns. _SCHEMA only ever CREATEs, so
+            # DBs made before templates existed need these added in place.
+            for table, columns in (
+                ("standards_projects", _PROJECT_PROVENANCE_COLUMNS),
+                ("standards_files", _FILE_PROVENANCE_COLUMNS),
+            ):
+                existing = {r[1] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+                for column in columns:
+                    if column not in existing:
+                        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} TEXT")
 
     # -- readers ----------------------------------------------------------------
 
@@ -173,13 +221,24 @@ class StandardsStore:
     def _get_project_sync(self, name: str) -> ProjectRow | None:
         with _connect(self._path) as conn:
             row = conn.execute(
-                "SELECT name, indicator, updated_at FROM standards_projects WHERE name = ?",
+                """
+                SELECT name, indicator, updated_at, template_id, template_version,
+                       language, language_version, packs
+                FROM standards_projects WHERE name = ?
+                """,
                 (name,),
             ).fetchone()
         if row is None:
             return None
         return ProjectRow(
-            name=row["name"], indicator=row["indicator"], updated_at=row["updated_at"]
+            name=row["name"],
+            indicator=row["indicator"],
+            updated_at=row["updated_at"],
+            template_id=row["template_id"],
+            template_version=row["template_version"],
+            language=row["language"],
+            language_version=row["language_version"],
+            packs=json.loads(row["packs"]) if row["packs"] else [],
         )
 
     async def list_files(self, project: str) -> list[FileRow]:
@@ -348,6 +407,154 @@ class StandardsStore:
         assert row is not None
         assert row.version == new_version
         return row
+
+    async def create_project_from_template(
+        self,
+        *,
+        project: str,
+        template_id: str,
+        template_version: str,
+        language: str,
+        language_version: str,
+        documents: list[dict],
+        packs: list[dict] | None = None,
+        updated_by: str | None = None,
+    ) -> int:
+        """Create a project and all of its documents in one transaction.
+
+        `documents` entries carry the keys produced by the scaffold service:
+        relative_path, kind, title, description, frontmatter, body,
+        is_executable, source_hash, source_rule_ids, source_pack.
+
+        `packs` records every pack that took part; template_id and language hold
+        the first selected language, for display.
+
+        Raises ProjectExists if the project is already there - scaffolding never
+        merges into or overwrites an existing project.
+        """
+        return await asyncio.to_thread(
+            self._create_project_from_template_sync,
+            project,
+            template_id,
+            template_version,
+            language,
+            language_version,
+            documents,
+            packs or [],
+            updated_by,
+        )
+
+    def _create_project_from_template_sync(
+        self,
+        project: str,
+        template_id: str,
+        template_version: str,
+        language: str,
+        language_version: str,
+        documents: list[dict],
+        packs: list[dict],
+        updated_by: str | None,
+    ) -> int:
+        now = int(time.time())
+        with _connect(self._path) as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                exists = conn.execute(
+                    "SELECT 1 FROM standards_projects WHERE name = ?", (project,)
+                ).fetchone()
+                if exists is not None:
+                    raise ProjectExists(project)
+
+                conn.execute(
+                    """
+                    INSERT INTO standards_projects (
+                        name, indicator, updated_at, template_id, template_version,
+                        language, language_version, packs
+                    ) VALUES (?, 'green', ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        project,
+                        now,
+                        template_id,
+                        template_version,
+                        language,
+                        language_version,
+                        json.dumps(packs),
+                    ),
+                )
+
+                for doc in documents:
+                    conn.execute(
+                        """
+                        INSERT INTO standards_files (
+                            project, relative_path, kind, title, description,
+                            frontmatter, body, is_executable, version,
+                            updated_at, updated_by,
+                            source_template, source_version, source_hash, source_rule_ids,
+                            source_pack
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            project,
+                            doc["relative_path"],
+                            doc["kind"],
+                            doc["title"],
+                            doc.get("description", ""),
+                            doc.get("frontmatter", ""),
+                            doc["body"],
+                            int(bool(doc.get("is_executable", False))),
+                            now,
+                            updated_by,
+                            template_id,
+                            template_version,
+                            doc.get("source_hash", ""),
+                            json.dumps(doc.get("source_rule_ids", [])),
+                            doc.get("source_pack", ""),
+                        ),
+                    )
+                conn.execute("COMMIT")
+            except Exception:
+                conn.execute("ROLLBACK")
+                raise
+        logger.info(
+            "Scaffolded project %s from template %s@%s (%d docs)",
+            project,
+            template_id,
+            template_version,
+            len(documents),
+        )
+        return len(documents)
+
+    async def delete_project(self, project: str) -> int:
+        """Delete a project and every document in it. Returns the document count.
+
+        Irreversible: there is no soft-delete or trash. Callers are expected to
+        confirm with the user first.
+        """
+        return await asyncio.to_thread(self._delete_project_sync, project)
+
+    def _delete_project_sync(self, project: str) -> int:
+        with _connect(self._path) as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                exists = conn.execute(
+                    "SELECT 1 FROM standards_projects WHERE name = ?", (project,)
+                ).fetchone()
+                if exists is None:
+                    conn.execute("ROLLBACK")
+                    return 0
+                # Delete rows explicitly rather than relying on the cascade: a DB
+                # created before the foreign key existed would silently keep them.
+                count = conn.execute(
+                    "DELETE FROM standards_files WHERE project = ?", (project,)
+                ).rowcount
+                conn.execute("DELETE FROM standards_projects WHERE name = ?", (project,))
+                conn.execute("COMMIT")
+            except Exception:
+                conn.execute("ROLLBACK")
+                raise
+        logger.info("Deleted project %s (%d documents)", project, count)
+        return count
 
     async def delete_file(self, project: str, relative_path: str) -> bool:
         return await asyncio.to_thread(self._delete_file_sync, project, relative_path)
@@ -546,5 +753,6 @@ __all__ = [
     "StandardsStore",
     "ProjectRow",
     "FileRow",
+    "ProjectExists",
     "VersionConflict",
 ]

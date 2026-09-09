@@ -15,6 +15,13 @@
   <form method="post" action="/dashboard/standards/{{ project }}/__PATH__" id="new-doc-form">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <div class="se-field">
+      <label for="starter">Start from</label>
+      <select id="starter">
+        <option value="">Blank</option>
+        <option value="architecture">ARCHITECTURE.md - module boundaries and dependency rules</option>
+      </select>
+    </div>
+    <div class="se-field">
       <label for="relative_path">Relative path</label>
       <input type="text" id="relative_path" name="relative_path" required placeholder="e.g. workflows/hotfix.md"
              autocomplete="off" spellcheck="false">
@@ -37,6 +44,71 @@
 (function () {
   var form = document.getElementById('new-doc-form');
   var pathInput = document.getElementById('relative_path');
+
+  // Starter templates: doc types the playbook expects every project to ship.
+  // Add an <option> above and a matching entry here to offer a new one.
+  var STARTERS = {
+    architecture: {
+      path: 'ARCHITECTURE.md',
+      content: [
+        '---',
+        'title: Architecture - {{ project }}',
+        'description: Module boundaries, dependency rules, and where new code goes.',
+        'tags: [architecture, boundaries]',
+        '---',
+        '',
+        '# Architecture - {{ project }}',
+        '',
+        'Imperative constraints only. No rationale, no history, no code examples.',
+        '',
+        '## Modules',
+        '',
+        '| Module | Purpose |',
+        '| --- | --- |',
+        '|  |  |',
+        '',
+        '## Dependency rules',
+        '',
+        '- `<module>` must not import `<module>`.',
+        '',
+        '## Layer responsibilities',
+        '',
+        '- `<module>` must not ...',
+        '',
+        '## Data flow',
+        '',
+        'Describe the single end-to-end path, entry point first.',
+        '',
+        '## Where new code goes',
+        '',
+        '| New thing | Path |',
+        '| --- | --- |',
+        '|  |  |',
+        '',
+        '## Pointers',
+        '',
+        '- `patterns/`',
+        ''
+      ].join('\n')
+    }
+  };
+
+  var starter = document.getElementById('starter');
+  var contentInput = document.getElementById('content');
+  starter.addEventListener('change', function () {
+    var tpl = STARTERS[starter.value];
+    if (!tpl) return;
+    // Don't clobber anything the user has already typed.
+    if (contentInput.value.trim() !== '' || pathInput.value.trim() !== '') {
+      if (!window.confirm('Replace the current path and content with the starter template?')) {
+        starter.value = '';
+        return;
+      }
+    }
+    pathInput.value = tpl.path;
+    contentInput.value = tpl.content;
+  });
+
   form.addEventListener('submit', function () {
     var path = pathInput.value.trim().replace(/^\/+/, '');
     form.action = '/dashboard/standards/{{ project }}/' + path.split('/').map(encodeURIComponent).join('/');

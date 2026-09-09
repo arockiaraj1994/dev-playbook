@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% import "_wizard.html" as wiz %}
+{% block title %}New Project Standards{% endblock %}
+{% block crumb %}<a href="/dashboard/standards" style="color:inherit">Standards</a> <span class="crumbs-sep">/</span> <span class="current">New Project Standards</span>{% endblock %}
+
+{% block content %}
+
+<div class="page-header">
+  <div>
+    <h1 class="page-title">New Project Standards</h1>
+    <p class="page-sub">Name the project and pick every language it uses. You can select more than one.</p>
+  </div>
+</div>
+
+{{ wiz.stepper(steps, current_step) }}
+
+{% if errors %}
+<div class="callout callout-error">
+  <div>{% for e in errors %}<div>{{ e }}</div>{% endfor %}</div>
+</div>
+{% endif %}
+
+{% if not languages %}
+<div class="callout">
+  <div>No language packs found. Check that <code>mcp/templates/languages/</code> is present.</div>
+</div>
+{% else %}
+<form method="post" action="{{ next_action }}" id="wizard-form">
+  <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+
+  <div class="card" style="padding:1.25rem;margin-bottom:16px">
+    <div class="se-field">
+      <label for="project">Project name</label>
+      <input type="text" id="project" name="project" required value="{{ state.project }}"
+             placeholder="e.g. payments-api" autocomplete="off" spellcheck="false"
+             pattern="[A-Za-z0-9][A-Za-z0-9._\-]*" maxlength="64"
+             title="Letters, digits, dot, dash or underscore">
+      <p class="se-hint">Letters, digits, dot, dash or underscore. Used in the dashboard URL.</p>
+    </div>
+  </div>
+
+  <div class="card" style="padding:1.25rem;margin-bottom:16px">
+    <h2 class="card-heading">Languages</h2>
+    <p class="se-hint" style="margin:0 0 .75rem">
+      Each language adds its own standards, patterns and gate script, and contributes
+      its rules to the shared documents.
+    </p>
+    {% for pack in languages %}
+    <label class="tpl-option">
+      <input type="checkbox" name="language" value="{{ pack.id }}" class="lang-check"
+             data-placeholders="{{ pack.placeholders | join(',') }}"
+             {% if pack.id in state.languages %}checked{% endif %}>
+      <span>
+        <strong>{{ pack.title }}</strong>
+        <span class="tpl-ver">{{ pack.language_version }}</span>
+        <span class="tpl-meta">v{{ pack.template_version }} &middot; {{ pack.all_rules | length }} rules</span>
+        <span class="tpl-desc">{{ pack.description }}</span>
+      </span>
+    </label>
+    {% endfor %}
+  </div>
+
+  <div class="card" style="padding:1.25rem;margin-bottom:16px">
+    <h2 class="card-heading">Template values</h2>
+    <p class="se-hint" style="margin:0 0 1rem">Substituted into the generated documents.</p>
+    {% set seen = [] %}
+    {% for pack in languages %}
+      {% for p in pack.placeholders %}{% if p not in seen %}{% set _ = seen.append(p) %}
+      <div class="se-field placeholder-field" data-name="{{ p }}" hidden>
+        <label for="ph_{{ p }}">{{ p }}</label>
+        <input type="text" id="ph_{{ p }}" data-ph-name="{{ p }}"
+               value="{{ state.placeholders.get(p, '') }}"
+               placeholder="{% if p == 'package' %}com.example.app{% endif %}"
+               autocomplete="off" spellcheck="false">
+      </div>
+      {% endif %}{% endfor %}
+    {% endfor %}
+    <p id="no-placeholders" class="se-hint" style="margin:0" hidden>
+      The selected languages need no extra values.
+    </p>
+  </div>
+
+  {{ wiz.nav(back_action, next_label) }}
+</form>
+{% endif %}
+
+{% endblock %}
+
+{% block page_script %}
+<script>
+(function () {
+  var form = document.getElementById('wizard-form');
+  if (!form) return;
+  var fields = Array.prototype.slice.call(document.querySelectorAll('.placeholder-field'));
+  var none = document.getElementById('no-placeholders');
+
+  // Show only the placeholders the checked languages actually declare, and only
+  // submit those - each is renamed so the server sees placeholder_<name>.
+  function sync() {
+    var needed = {};
+    Array.prototype.forEach.call(document.querySelectorAll('.lang-check'), function (cb) {
+      if (!cb.checked) return;
+      (cb.getAttribute('data-placeholders') || '').split(',').forEach(function (p) {
+        if (p) needed[p] = true;
+      });
+    });
+
+    var shown = 0;
+    fields.forEach(function (f) {
+      var name = f.getAttribute('data-name');
+      var input = f.querySelector('input');
+      if (needed[name]) {
+        f.hidden = false;
+        input.name = 'placeholder_' + input.getAttribute('data-ph-name');
+        input.required = true;
+        shown++;
+      } else {
+        f.hidden = true;
+        input.removeAttribute('name');
+        input.required = false;
+      }
+    });
+    if (none) none.hidden = shown > 0;
+  }
+
+  form.addEventListener('change', function (e) {
+    if (e.target.classList.contains('lang-check')) sync();
+  });
+  sync();
+})();
+</script>
+{% endblock %}

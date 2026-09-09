@@ -1,0 +1,153 @@
+doc: languages/kotlin/anti-patterns.md
+label: Common mistakes
+merge: by-group
+title: Kotlin anti-patterns - {{project}}
+description: Patterns to avoid when writing Kotlin for {{project}}, and what to do instead.
+tags: [kotlin, anti-patterns]
+intro: |
+  Know these before writing code. Each one is a defect this project has decided
+  not to accept, not a matter of taste.
+groups:
+  - id: nullability
+    title: Nullability and types
+  - id: coroutines
+    title: Coroutines
+  - id: design
+    title: Design
+  - id: security
+    title: Security
+outro: |
+  ```kotlin
+  // Wrong: !! , GlobalScope, swallowed cancellation
+  GlobalScope.launch {
+      try { save(user!!) } catch (e: Exception) { }
+  }
+
+  // Right: scoped, non-null by type, cancellation respected
+  scope.launch {
+      val user = requireNotNull(maybeUser) { "user must be loaded first" }
+      runCatching { save(user) }.onFailure(::report)
+  }
+  ```
+rules:
+  - id: ap-not-null-assertion
+    group: nullability
+    severity: hard
+    title: Don't use !! to silence the compiler
+    body: >-
+      It converts a type error into a production crash. Narrow with a check, or
+      use `requireNotNull` with a message that says what went wrong.
+
+  - id: ap-lateinit-everywhere
+    group: nullability
+    severity: soft
+    title: Don't reach for lateinit by default
+    body: >-
+      `lateinit` trades a compile-time guarantee for a runtime one. Prefer
+      constructor injection; reserve it for genuinely deferred initialization.
+
+  - id: ap-nullable-boolean-logic
+    group: nullability
+    severity: soft
+    title: Don't branch on a nullable Boolean
+    body: >-
+      Three-state logic is almost never intended. Resolve it at the boundary with
+      `?: false` or model the third state explicitly.
+
+  - id: ap-stringly-typed
+    group: nullability
+    severity: soft
+    title: Don't use a String where a real type belongs
+    body: >-
+      An id, a currency and a status are not strings. Wrap them in a value class
+      so the compiler stops you passing one where another belongs.
+
+  - id: ap-globalscope
+    group: coroutines
+    severity: hard
+    title: Don't launch coroutines in GlobalScope
+    body: >-
+      The coroutine outlives its caller, ignores cancellation and leaks. Launch in
+      a scope whose lifetime matches the work.
+
+  - id: ap-swallowing-cancellation
+    group: coroutines
+    severity: hard
+    title: Don't swallow CancellationException
+    body: >-
+      A broad `catch (e: Exception)` inside a coroutine swallows cancellation and
+      breaks structured concurrency. Rethrow it, or catch a narrower type.
+
+  - id: ap-runblocking-in-production
+    group: coroutines
+    severity: hard
+    title: Don't use runBlocking outside tests and main
+    body: >-
+      It blocks a thread and can deadlock when the surrounding code is already
+      suspending. Make the caller `suspend` instead.
+
+  - id: ap-hardcoded-dispatcher
+    group: coroutines
+    severity: soft
+    title: Don't hardcode Dispatchers.IO in a class
+    body: >-
+      A dispatcher baked into a class cannot be replaced in a test. Inject it,
+      defaulting to the real one.
+
+  - id: ap-blocking-call-in-suspend
+    group: coroutines
+    severity: hard
+    title: Don't block inside a suspend function
+    body: >-
+      A `suspend` function that calls blocking I/O without `withContext` stalls the
+      dispatcher. Move the call onto an appropriate dispatcher.
+
+  - id: ap-god-extension-file
+    group: design
+    severity: soft
+    title: Don't collect unrelated extensions in one file
+    body: >-
+      Unrelated extensions in one file couple everything that imports it. Put the
+      extension next to the type it extends.
+
+  - id: ap-data-class-for-everything
+    group: design
+    severity: soft
+    title: Don't use a data class when rules must hold
+    body: >-
+      A `data class` exposes `copy`, which lets callers bypass the constructor and
+      build an invalid instance. Use a regular class when invariants matter.
+
+  - id: ap-sealed-when-without-exhaustive
+    group: design
+    severity: soft
+    title: Use when as an expression over sealed types
+    body: >-
+      Use `when` as an expression so the compiler enforces exhaustiveness. An
+      `else` branch silently absorbs every variant added later.
+
+  - id: ap-companion-object-state
+    group: design
+    severity: hard
+    title: Don't keep changing state in a companion object
+    body: >-
+      That is a global variable. It defeats testing and is a data race waiting to
+      happen. Pass the state in.
+
+  - id: ap-trusting-client-input
+    group: security
+    severity: hard
+    title: Don't trust an id sent by the client
+    body: >-
+      Re-check authorization against the authenticated principal on every request.
+      An id in the payload proves nothing about who may access it.
+    source: OWASP C1
+
+  - id: ap-verbose-error-to-client
+    group: security
+    severity: hard
+    title: Don't return stack traces to callers
+    body: >-
+      Return a stable, generic error and keep the detail in the log. Stack traces
+      disclose internals to anyone who can trigger a failure.
+    source: OWASP C3

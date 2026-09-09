@@ -1,7 +1,9 @@
-/* standard_detail.js - four-tab file viewer (Formatted/Source/Code/Edit)
- * for the standards detail page. Vendored libs (marked, DOMPurify, Prism,
- * CodeMirror) are loaded as plain scripts before this file and expose
- * globals: window.marked, window.DOMPurify, window.Prism, window.CodeMirror.
+/* standard_detail.js - popup file viewer (Formatted/Source/Edit) for the
+ * standards detail page. Each file row's detail markup lives in an inert
+ * <template>; clicking the row clones it into a single shared #file-modal.
+ * Vendored libs (marked, DOMPurify, CodeMirror) are loaded as plain scripts
+ * before this file and expose globals: window.marked, window.DOMPurify,
+ * window.CodeMirror.
  */
 (function () {
   "use strict";
@@ -42,13 +44,6 @@
     pre.textContent = b64ToUtf8(card.dataset.rawB64 || "");
   }
 
-  function renderCode(card, codeEl) {
-    var raw = b64ToUtf8(card.dataset.rawB64 || "");
-    codeEl.textContent = raw;
-    codeEl.className = card.dataset.kind === "script" ? "language-bash" : "language-markdown";
-    if (window.Prism) window.Prism.highlightElement(codeEl);
-  }
-
   function csrfToken(card) {
     var form = card.querySelector('form[action$="/delete"] input[name="_csrf"]');
     return form ? form.value : "";
@@ -67,15 +62,19 @@
     });
   }
 
-  function initCard(card) {
-    var tabs = card.querySelectorAll(".sd-tab");
+  var modal = document.getElementById("file-modal");
+  var modalTitle = document.getElementById("file-modal-title");
+  var modalBody = modal ? modal.querySelector(".sd-modal-body") : null;
+  var lastFocus = null;
+
+  function activateTabs(card, body) {
+    var tabs = body.querySelectorAll(".sd-tab");
     var panels = {
-      formatted: card.querySelector(".sd-panel-formatted"),
-      source: card.querySelector(".sd-panel-source"),
-      code: card.querySelector(".sd-panel-code"),
-      edit: card.querySelector(".sd-panel-edit"),
+      formatted: body.querySelector(".sd-panel-formatted"),
+      source: body.querySelector(".sd-panel-source"),
+      edit: body.querySelector(".sd-panel-edit"),
     };
-    var rendered = { formatted: false, source: false, code: false, edit: false };
+    var rendered = { formatted: false, source: false, edit: false };
     var cmInstance = null;
 
     function activate(tabName) {
@@ -94,8 +93,6 @@
           renderFormatted(card, panels.formatted);
         } else if (tabName === "source" && panels.source) {
           renderSource(card, panels.source.querySelector("pre"));
-        } else if (tabName === "code" && panels.code) {
-          renderCode(card, panels.code.querySelector("code"));
         } else if (tabName === "edit" && panels.edit) {
           var mount = panels.edit.querySelector(".sd-editor-mount");
           cmInstance = initEditor(card, mount);
@@ -114,11 +111,9 @@
       });
     });
 
-    // Pre-render the default active tab (Formatted for markdown, Source for scripts).
-    var initialTab = card.querySelector(".sd-tab.is-active");
+    var initialTab = body.querySelector(".sd-tab.is-active");
     if (initialTab) activate(initialTab.dataset.tab);
 
-    // Edit tab: Save / Cancel.
     if (panels.edit) {
       var saveBtn = panels.edit.querySelector(".sd-save");
       var cancelBtn = panels.edit.querySelector(".sd-cancel");
@@ -171,21 +166,16 @@
                 status.className = "sd-save-status is-error";
                 return;
               }
-              // Update card state from the response so Source/Code/Formatted/
-              // frontmatter/rules reflect the save without a full page reload.
+              // Update the row's dataset so Source/Formatted/Edit reflect the
+              // save next time this file is opened, without a full page reload.
               card.dataset.version = String(result.data.version);
               card.dataset.rawB64 = utf8ToB64(content);
               card.dataset.bodyB64 = utf8ToB64(result.data.raw_body || "");
-              rendered.formatted = false;
-              rendered.source = false;
-              rendered.code = false;
               status.textContent = "Saved.";
               status.className = "sd-save-status is-ok";
+              rendered.formatted = false;
+              rendered.source = false;
               activate("edit");
-              // Force re-render of the other tabs next time they're opened.
-              ["formatted", "source", "code"].forEach(function (name) {
-                rendered[name] = false;
-              });
             })
             .catch(function (err) {
               saveBtn.disabled = false;
@@ -197,5 +187,43 @@
     }
   }
 
-  document.querySelectorAll(".file-card[data-project]").forEach(initCard);
+  function openModal(card, trigger) {
+    var template = card.querySelector(".file-detail-template");
+    if (!modal || !modalBody || !template) return;
+
+    lastFocus = trigger || document.activeElement;
+    modalBody.innerHTML = "";
+    modalBody.appendChild(document.importNode(template.content, true));
+    if (modalTitle) modalTitle.textContent = card.dataset.path || "";
+
+    activateTabs(card, modalBody);
+
+    modal.hidden = false;
+    var closeBtn = modal.querySelector(".sd-modal-close");
+    if (closeBtn) closeBtn.focus();
+  }
+
+  function closeModal() {
+    if (!modal || modal.hidden) return;
+    modal.hidden = true;
+    modalBody.innerHTML = "";
+    if (lastFocus && typeof lastFocus.focus === "function") lastFocus.focus();
+    lastFocus = null;
+  }
+
+  document.querySelectorAll(".file-card[data-project] .file-summary").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      openModal(btn.closest(".file-card"), btn);
+    });
+  });
+
+  if (modal) {
+    var backdrop = modal.querySelector(".sd-modal-backdrop");
+    var closeBtn = modal.querySelector(".sd-modal-close");
+    if (backdrop) backdrop.addEventListener("click", closeModal);
+    if (closeBtn) closeBtn.addEventListener("click", closeModal);
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape" && !modal.hidden) closeModal();
+    });
+  }
 })();

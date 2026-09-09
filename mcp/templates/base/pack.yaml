@@ -1,0 +1,10 @@
+id: base
+kind: base
+title: Core
+template_version: "1.0.0"
+description: >-
+  Cross-cutting rules every project gets regardless of language: scope and
+  honesty guardrails, git practice, the definition of done, and the workflow
+  documents.
+placeholders:
+  - project

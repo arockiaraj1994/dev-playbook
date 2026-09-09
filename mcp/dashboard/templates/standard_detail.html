@@ -2,7 +2,6 @@
 {% block title %}{{ status.project }} - Standards{% endblock %}
 {% block head_extra %}
 <link rel="stylesheet" href="/dashboard/static/vendor/codemirror.min.css">
-<link rel="stylesheet" href="/dashboard/static/vendor/prism.css">
 <link rel="stylesheet" href="/dashboard/static/standard_detail.css">
 {% endblock %}
 {% block crumb %}<a href="/dashboard/standards" style="color:inherit">Standards</a> <span class="crumbs-sep">/</span> <span class="current">{{ status.project }}</span>{% endblock %}
@@ -15,15 +14,15 @@
       <span class="indicator-dot indicator-{{ status.indicator }}" style="vertical-align:middle;margin-right:8px"></span>
       {{ status.project }}
     </h1>
-    <p class="page-sub">
-      {{ status.total_files }} indexed file{{ '' if status.total_files == 1 else 's' }} –
-      <span style="color:var(--text)">🟢 {{ status.counts.green }}</span> ·
-      <span style="color:var(--amber-700)">🟡 {{ status.counts.amber }}</span> ·
-      <span style="color:var(--red-700)">🔴 {{ status.counts.red }}</span>
+    <p class="page-sub">{{ status.total_files }} indexed file{{ '' if status.total_files == 1 else 's' }}</p>
+    <div class="sd-legend">
+      <span class="badge green"><span class="badge-dot"></span>{{ status.counts.green }} green</span>
+      <span class="badge amber"><span class="badge-dot"></span>{{ status.counts.amber }} amber</span>
+      <span class="badge red"><span class="badge-dot"></span>{{ status.counts.red }} red</span>
       {% if status.missing_required %}
-        · <span class="badge red">{{ status.missing_required|length }} missing required</span>
+        <span class="badge red">{{ status.missing_required|length }} missing required</span>
       {% endif %}
-    </p>
+    </div>
   </div>
   {% if is_admin %}
   <a href="/dashboard/standards/{{ status.project }}/new" class="btn btn-primary" style="align-self:flex-start">
@@ -47,118 +46,120 @@
 </div>
 {% endif %}
 
-{# Project-level rules summary #}
-<section class="doc-section">
-  <h2>Project-level checks</h2>
-  <ul class="rule-list">
-    {% for r in status.rule_results %}
-    <li class="rule-row {% if r.passed %}rule-pass{% else %}rule-fail{% endif %}">
-      <span class="indicator-dot indicator-{{ 'green' if r.passed else ('red' if r.severity == 'hard' else 'amber') }}"></span>
-      <span class="rule-message">{{ r.message }}</span>
-      <span class="rule-severity">{{ r.severity }}</span>
-    </li>
-    {% endfor %}
-  </ul>
-</section>
+{% macro file_card(fs, display_path) %}
+{% set kind = kind_by_path.get(fs.relative_path, 'markdown') %}
+<div class="file-card file-{{ fs.indicator }}"
+     data-project="{{ status.project }}"
+     data-path="{{ fs.relative_path }}"
+     data-kind="{{ kind }}"
+     data-version="{{ version_by_path.get(fs.relative_path, 1) }}"
+     data-raw-b64="{{ raw_by_path.get(fs.relative_path, '') }}"
+     data-body-b64="{{ body_by_path.get(fs.relative_path, '') }}">
+  <button type="button" class="file-summary" aria-haspopup="dialog">
+    <span class="indicator-dot indicator-{{ fs.indicator }}"
+          title="{{ fs.indicator|capitalize }} – {{ fs.failed|length }} rule(s) failing"></span>
+    <code class="file-path">{{ display_path }}</code>
+  </button>
+  <template class="file-detail-template">
+    {% if fs.summary %}<p class="file-desc">{{ fs.summary }}</p>{% endif %}
+
+    <div class="sd-panels">
+      {% if kind == 'markdown' %}
+      <div class="sd-panel">
+        <h4>Frontmatter</h4>
+        {% if fs.frontmatter %}
+        <div class="sd-chip-row">
+          {% for key, value in fs.frontmatter.items() %}
+          <span class="sd-chip" title="{{ value|fm_value }}"><span class="sd-chip-key">{{ key }}</span>{{ value|fm_value }}</span>
+          {% endfor %}
+        </div>
+        {% else %}
+        <p class="muted" style="font-size:.8125rem">No frontmatter.</p>
+        {% endif %}
+      </div>
+      {% endif %}
+      <div class="sd-panel">
+        <h4>Rules</h4>
+        <div class="sd-chip-row">
+          {% for r in fs.rules %}
+          <span class="sd-chip sd-chip-rule {% if r.passed %}rule-pass{% else %}rule-fail{% endif %}" title="{{ r.message }}">
+            <span class="indicator-dot indicator-{{ 'green' if r.passed else ('red' if r.severity == 'hard' else 'amber') }}"></span>
+            <span class="rule-id mono">{{ r.rule_id }}</span>
+            <span class="rule-severity">{{ r.severity }}</span>
+          </span>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    {% if is_admin %}
+    <div style="display:flex;gap:.5rem;margin:12px 0">
+      <form method="post" action="/dashboard/standards/{{ status.project }}/{{ fs.relative_path }}/delete"
+            onsubmit="return confirm('Delete {{ fs.relative_path }}? This cannot be undone.');" style="margin:0">
+        <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+        <button type="submit" class="btn btn-ghost" style="color:var(--red-700,#b91c1c)">Delete</button>
+      </form>
+    </div>
+    {% endif %}
+
+    <div class="sd-tabs" role="tablist">
+      {% if kind == 'markdown' %}<button type="button" class="sd-tab is-active" data-tab="formatted">Formatted</button>{% endif %}
+      <button type="button" class="sd-tab {{ 'is-active' if kind != 'markdown' }}" data-tab="source">Source</button>
+      {% if is_admin %}<button type="button" class="sd-tab" data-tab="edit">Edit</button>{% endif %}
+    </div>
+
+    {% if kind == 'markdown' %}
+    <div class="sd-tabpanel sd-panel-formatted is-active markdown-body"></div>
+    {% endif %}
+    <div class="sd-tabpanel sd-panel-source {{ 'is-active' if kind != 'markdown' }}" hidden><pre class="mono"></pre></div>
+    {% if is_admin %}
+    <div class="sd-tabpanel sd-panel-edit" hidden>
+      <div class="sd-editor-mount"></div>
+      <div class="sd-editor-actions">
+        <button type="button" class="btn btn-primary sd-save">Save</button>
+        <button type="button" class="btn btn-ghost sd-cancel">Cancel</button>
+        <span class="sd-save-status" role="status"></span>
+      </div>
+    </div>
+    {% endif %}
+  </template>
+</div>
+{% endmacro %}
 
 {# File tree grouped by folder #}
 <section class="doc-section">
   <h2>Files</h2>
+  {% set row_groups = ['core', 'patterns', 'workflows', 'gates'] %}
   {% for group_name, group_files in groups %}
-  <div class="file-group">
+  <div class="file-group {{ 'file-group-root' if not group_name }} {{ 'file-group-row' if not group_name or group_name in row_groups }}">
+    {% if group_name %}
     <div class="file-group-head">{{ group_name }}/</div>
-    {% for fs in group_files %}
-    {% set kind = kind_by_path.get(fs.relative_path, 'markdown') %}
-    <details class="file-card file-{{ fs.indicator }}"
-              data-project="{{ status.project }}"
-              data-path="{{ fs.relative_path }}"
-              data-kind="{{ kind }}"
-              data-version="{{ version_by_path.get(fs.relative_path, 1) }}"
-              data-raw-b64="{{ raw_by_path.get(fs.relative_path, '') }}"
-              data-body-b64="{{ body_by_path.get(fs.relative_path, '') }}">
-      <summary class="file-summary">
-        <span class="indicator-dot indicator-{{ fs.indicator }}"
-              title="{{ fs.indicator|capitalize }} – {{ fs.failed|length }} rule(s) failing"></span>
-        <code class="file-path">{{ fs.relative_path }}</code>
-        {% if fs.title and fs.title != fs.name %}
-          <span class="file-title">{{ fs.title }}</span>
-        {% endif %}
-        <span class="file-counts">
-          {% set hard_fails = fs.hard_failures|length %}
-          {% set soft_fails = fs.soft_failures|length %}
-          {% if hard_fails %}<span class="badge red">{{ hard_fails }} hard</span>{% endif %}
-          {% if soft_fails %}<span class="badge amber">{{ soft_fails }} soft</span>{% endif %}
-          {% if not hard_fails and not soft_fails %}<span class="badge green"><span class="badge-dot"></span>all rules pass</span>{% endif %}
-        </span>
-      </summary>
-      <div class="file-body">
-        {% if fs.summary %}<p class="file-desc">{{ fs.summary }}</p>{% endif %}
-
-        <div class="sd-panels">
-          {% if kind == 'markdown' %}
-          <div class="sd-panel">
-            <h4>Frontmatter</h4>
-            {% if fs.frontmatter %}
-            <table class="frontmatter-table">
-              {% for key, value in fs.frontmatter.items() %}
-              <tr><th>{{ key }}</th><td>{{ value|fm_value }}</td></tr>
-              {% endfor %}
-            </table>
-            {% else %}
-            <p class="muted" style="font-size:.8125rem">No frontmatter.</p>
-            {% endif %}
-          </div>
-          {% endif %}
-          <div class="sd-panel">
-            <h4>Rules</h4>
-            <ul class="rule-list">
-              {% for r in fs.rules %}
-              <li class="rule-row {% if r.passed %}rule-pass{% else %}rule-fail{% endif %}">
-                <span class="indicator-dot indicator-{{ 'green' if r.passed else ('red' if r.severity == 'hard' else 'amber') }}"></span>
-                <span class="rule-message">{{ r.message }}</span>
-                <a class="rule-id mono" href="#rule-{{ r.rule_id }}">{{ r.rule_id }}</a>
-                <span class="rule-severity">{{ r.severity }}</span>
-              </li>
-              {% endfor %}
-            </ul>
-          </div>
+    {% endif %}
+    {% if group_name == 'languages' %}
+    <div class="language-cards">
+      {% for lang_name, lang_files in group_files %}
+      {% set red_count = lang_files|selectattr('indicator', 'equalto', 'red')|list|length %}
+      {% set amber_count = lang_files|selectattr('indicator', 'equalto', 'amber')|list|length %}
+      {% set lang_indicator = 'red' if red_count else ('amber' if amber_count else 'green') %}
+      <div class="language-card">
+        <div class="language-card-head">
+          <span class="indicator-dot indicator-{{ lang_indicator }}"></span>
+          {{ lang_name }}/
         </div>
-
-        {% if is_admin %}
-        <div style="display:flex;gap:.5rem;margin:12px 0">
-          <form method="post" action="/dashboard/standards/{{ status.project }}/{{ fs.relative_path }}/delete"
-                onsubmit="return confirm('Delete {{ fs.relative_path }}? This cannot be undone.');" style="margin:0">
-            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-            <button type="submit" class="btn btn-ghost" style="color:var(--red-700,#b91c1c)">Delete</button>
-          </form>
+        <div class="language-card-body">
+          {% for fs in lang_files %}
+          {{ file_card(fs, fs.relative_path.split('/', 2)[-1]) }}
+          {% endfor %}
         </div>
-        {% endif %}
-
-        <div class="sd-tabs" role="tablist">
-          {% if kind == 'markdown' %}<button type="button" class="sd-tab is-active" data-tab="formatted">Formatted</button>{% endif %}
-          <button type="button" class="sd-tab {{ 'is-active' if kind != 'markdown' }}" data-tab="source">Source</button>
-          <button type="button" class="sd-tab" data-tab="code">Code</button>
-          {% if is_admin %}<button type="button" class="sd-tab" data-tab="edit">Edit</button>{% endif %}
-        </div>
-
-        {% if kind == 'markdown' %}
-        <div class="sd-tabpanel sd-panel-formatted is-active markdown-body"></div>
-        {% endif %}
-        <div class="sd-tabpanel sd-panel-source {{ 'is-active' if kind != 'markdown' }}" hidden><pre class="mono"></pre></div>
-        <div class="sd-tabpanel sd-panel-code" hidden><pre class="mono"><code></code></pre></div>
-        {% if is_admin %}
-        <div class="sd-tabpanel sd-panel-edit" hidden>
-          <div class="sd-editor-mount"></div>
-          <div class="sd-editor-actions">
-            <button type="button" class="btn btn-primary sd-save">Save</button>
-            <button type="button" class="btn btn-ghost sd-cancel">Cancel</button>
-            <span class="sd-save-status" role="status"></span>
-          </div>
-        </div>
-        {% endif %}
       </div>
-    </details>
+      {% endfor %}
+    </div>
+    {% else %}
+    {% for fs in group_files %}
+    {% set display_path = fs.relative_path[(group_name|length + 1):] if group_name else fs.relative_path %}
+    {{ file_card(fs, display_path) }}
     {% endfor %}
+    {% endif %}
   </div>
   {% endfor %}
 </section>
@@ -180,14 +181,43 @@
   </details>
 </section>
 
+<!-- Shared file detail popup -->
+<div id="file-modal" class="sd-modal-overlay" role="dialog" aria-modal="true"
+     aria-labelledby="file-modal-title" hidden>
+  <div class="sd-modal-backdrop"></div>
+  <div class="sd-modal-panel">
+    <div class="sd-modal-header">
+      <code id="file-modal-title" class="mono"></code>
+      <button type="button" class="sd-modal-close" aria-label="Close">&times;</button>
+    </div>
+    <div class="sd-modal-body"></div>
+  </div>
+</div>
+
+{% if is_admin %}
+<details class="danger-zone">
+  <summary>
+    <span class="danger-title">Delete this project</span>
+    <span class="danger-sub">Removes {{ status.project }} and all {{ status.total_files }} of its documents. This cannot be undone.</span>
+  </summary>
+  <form method="post" action="/dashboard/standards/{{ status.project }}/delete-project"
+        class="danger-body">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <div class="se-field">
+      <label for="confirm-delete">Type <code>{{ status.project }}</code> to confirm</label>
+      <input type="text" id="confirm-delete" name="confirm" required
+             autocomplete="off" spellcheck="false" placeholder="{{ status.project }}">
+    </div>
+    <button type="submit" class="btn btn-danger">Delete {{ status.project }} permanently</button>
+  </form>
+</details>
+{% endif %}
+
 {% endblock %}
 
 {% block page_script %}
 <script src="/dashboard/static/vendor/marked.min.js"></script>
 <script src="/dashboard/static/vendor/purify.min.js"></script>
-<script src="/dashboard/static/vendor/prism.js"></script>
-<script src="/dashboard/static/vendor/prism-markdown.min.js"></script>
-<script src="/dashboard/static/vendor/prism-bash.min.js"></script>
 <script src="/dashboard/static/vendor/codemirror.min.js"></script>
 <script src="/dashboard/static/vendor/cm-markdown.min.js"></script>
 <script src="/dashboard/static/vendor/cm-shell.min.js"></script>

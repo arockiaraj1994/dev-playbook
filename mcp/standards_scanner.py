@@ -29,7 +29,9 @@ SEVERITY_SOFT = "soft"
 # Required files every standards project must have.
 REQUIRED_FILES = (
     "AGENTS.md",
+    "ARCHITECTURE.md",
     "core/guardrails.md",
+    "core/git.md",
     "core/definition-of-done.md",
     "core/glossary.md",
     "gates/README.md",

@@ -1,0 +1,103 @@
+{# Numbered stepper: done steps show a check, the current one is filled, the
+   rest are outlined. Steps come from _wizard_sequence, so the count follows the
+   language selection. #}
+{% macro stepper(steps, current) %}
+<ol class="stepper">
+  {% for step in steps %}
+  <li class="stepper-item {% if step.number < current %}is-done{% elif step.number == current %}is-current{% endif %}">
+    <span class="stepper-line" aria-hidden="true"></span>
+    <span class="stepper-dot">
+      {% if step.number < current %}
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+      {% else %}{{ step.number }}{% endif %}
+    </span>
+    <span class="stepper-label">{{ step.label }}</span>
+  </li>
+  {% endfor %}
+</ol>
+{% endmacro %}
+
+{# Every step posts the whole selection forward, so the wizard needs no server
+   state and Back can re-enter any earlier step intact. #}
+{% macro carry(state, skip="") %}
+  {% if "project" != skip %}<input type="hidden" name="project" value="{{ state.project }}">{% endif %}
+  {% if "languages" != skip %}
+    {% for lang in state.languages %}<input type="hidden" name="language" value="{{ lang }}">{% endfor %}
+    {% for name, value in state.placeholders.items() %}
+    <input type="hidden" name="placeholder_{{ name }}" value="{{ value }}">
+    {% endfor %}
+  {% endif %}
+  {% if "language_rules" != skip %}
+    {% for rid in state.language_rules %}<input type="hidden" name="language_rule" value="{{ rid }}">{% endfor %}
+  {% endif %}
+  {% if "git_rules" != skip %}
+    {% for rid in state.git_rules %}<input type="hidden" name="git_rule" value="{{ rid }}">{% endfor %}
+  {% endif %}
+  {% if "workflows" != skip %}
+    {% for wid in state.workflows %}<input type="hidden" name="workflow" value="{{ wid }}">{% endfor %}
+  {% endif %}
+{% endmacro %}
+
+{# Rules this step owns but is not showing (another pack's), carried forward so
+   moving between rule steps never drops an earlier pack's choices. #}
+{% macro carry_other_rules(state, pack) %}
+  {% set mine = pack.all_rules | map(attribute="id") | list %}
+  {% for rid in state.language_rules if rid not in mine %}
+  <input type="hidden" name="language_rule" value="{{ rid }}">
+  {% endfor %}
+{% endmacro %}
+
+{# A rule checkbox. Locked rules render checked and disabled, with a hidden
+   mirror so they still submit - the service forces them on regardless. #}
+{% macro rule_row(rule, field, selected) %}
+<label class="rule-row">
+  <input type="checkbox" name="{{ field }}" value="{{ rule.id }}"
+         {% if rule.locked or rule.id in selected %}checked{% endif %}
+         {% if rule.locked %}disabled{% endif %}
+         class="{% if not rule.locked %}optional-rule{% endif %}">
+  {% if rule.locked %}<input type="hidden" name="{{ field }}" value="{{ rule.id }}">{% endif %}
+  <span class="rule-body">
+    <span class="rule-title">{{ rule.title }}</span>
+    <span class="badge badge-{{ rule.severity }}">{{ rule.severity }}</span>
+    {% if rule.locked %}<span class="badge badge-locked">required</span>{% endif %}
+    {% if rule.source %}<span class="rule-source">{{ rule.source }}</span>{% endif %}
+    <span class="rule-text">{{ rule.body }}</span>
+  </span>
+</label>
+{% endmacro %}
+
+{# One collapsed category. A closed <details> still submits its checkboxes -
+   the content stays in the DOM, it is only not rendered - which is what makes
+   "accept the recommended set" a single click rather than a long scroll. #}
+{% macro rule_category(label, section, field, selected) %}
+{% set rules = section.rules %}
+<details class="rule-category">
+  <summary>
+    <span class="rule-cat-name">{{ label }}</span>
+    <span class="rule-cat-count">{{ rules | length }}</span>
+  </summary>
+  <div class="rule-cat-body">
+    {% if section.groups is defined %}
+      {% for group in section.groups %}
+        {% set in_group = rules | selectattr("group", "equalto", group.id) | list %}
+        {% if in_group %}
+        <div class="rule-group-title">{{ group.title }}</div>
+        {% for rule in in_group %}{{ rule_row(rule, field, selected) }}{% endfor %}
+        {% endif %}
+      {% endfor %}
+    {% else %}
+      {% for rule in rules %}{{ rule_row(rule, field, selected) }}{% endfor %}
+    {% endif %}
+  </div>
+</details>
+{% endmacro %}
+
+{% macro nav(back_action, submit_label) %}
+<div class="wizard-nav">
+  <button type="submit" class="btn btn-primary">{{ submit_label }}</button>
+  {% if back_action %}
+  <button type="submit" class="btn btn-ghost" formaction="{{ back_action }}" formnovalidate>Back</button>
+  {% endif %}
+  <a href="/dashboard/standards" class="btn btn-ghost">Cancel</a>
+</div>
+{% endmacro %}

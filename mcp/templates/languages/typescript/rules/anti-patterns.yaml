@@ -1,0 +1,143 @@
+doc: languages/typescript/anti-patterns.md
+label: Common mistakes
+merge: by-group
+title: TypeScript anti-patterns - {{project}}
+description: Patterns to avoid when writing TypeScript for {{project}}, and what to do instead.
+tags: [typescript, anti-patterns]
+intro: |
+  Know these before writing code. Each one is a defect this project has decided
+  not to accept, not a matter of taste.
+groups:
+  - id: types
+    title: Types
+  - id: async
+    title: Async
+  - id: design
+    title: Design
+  - id: security
+    title: Security
+outro: |
+  ```ts
+  // Wrong: assertion instead of validation, floating promise, any
+  const user = (await fetch(url).then(r => r.json())) as User;
+  save(user);
+
+  // Right: validated at the boundary, awaited, typed
+  const parsed = UserSchema.parse(await (await fetch(url)).json());
+  await save(parsed);
+  ```
+rules:
+  - id: ap-type-assertion-as-validation
+    group: types
+    severity: hard
+    title: Don't use `as` in place of real validation
+    body: >-
+      `as User` tells the compiler to stop checking; it does not make the value a
+      `User`. Parse with a runtime schema at the boundary.
+
+  - id: ap-object-type
+    group: types
+    severity: soft
+    title: Don't use object or {} as a type
+    body: >-
+      `{}` means "anything except null or undefined", which is almost never what
+      you meant. Describe the actual shape, or use `Record<string, unknown>`.
+
+  - id: ap-optional-everything
+    group: types
+    severity: soft
+    title: Don't make every property optional
+    body: >-
+      Optional properties push the check to every call site. Model the states that
+      genuinely exist as a discriminated union instead.
+
+  - id: ap-boolean-blindness
+    group: types
+    severity: soft
+    title: Use a string union instead of several booleans
+    body: >-
+      Two booleans encode four states, of which perhaps two are legal. A string
+      literal union makes the illegal ones unrepresentable.
+
+  - id: ap-async-without-await
+    group: async
+    severity: hard
+    title: Don't leave a promise unawaited
+    body: >-
+      An un-awaited promise swallows its rejection and finishes after the response
+      is sent. Await it or hand it to something that will.
+
+  - id: ap-await-in-loop
+    group: async
+    severity: soft
+    title: Don't await one at a time when work is independent
+    body: >-
+      Awaiting inside a loop serializes independent work. Use `Promise.all` when
+      the iterations do not depend on each other - and keep the loop when they do.
+
+  - id: ap-promise-in-condition
+    group: async
+    severity: hard
+    title: Don't use a promise as an if condition
+    body: >-
+      A promise is always truthy. `if (isReady())` on an async function is always
+      true; await it first.
+
+  - id: ap-catch-and-continue
+    group: async
+    severity: hard
+    title: Never leave a catch block empty
+    body: >-
+      Swallowing an error hides the failure and produces wrong results later.
+      Handle it, wrap it with context, or let it propagate.
+
+  - id: ap-barrel-everything
+    group: design
+    severity: soft
+    title: Don't re-export everything from one index file
+    body: >-
+      A giant barrel file creates import cycles and defeats tree-shaking. Export a
+      module's public surface, not every file in it.
+
+  - id: ap-god-util-module
+    group: design
+    severity: soft
+    title: Don't collect unrelated helpers in utils.ts
+    body: >-
+      Unrelated functions in one module couple everything that imports it. Put the
+      function next to the type it serves.
+
+  - id: ap-mutating-arguments
+    group: design
+    severity: hard
+    title: Don't modify an object passed in as a parameter
+    body: >-
+      Callers do not expect their object to change. Return a new value; mark
+      parameters `readonly` to make the intent explicit.
+
+  - id: ap-trusting-client-input
+    group: security
+    severity: hard
+    title: Don't trust an id sent by the client
+    body: >-
+      Re-check authorization against the authenticated session on every request.
+      An id in the body proves nothing about who may access it.
+    source: OWASP C1
+
+  - id: ap-string-concatenated-queries
+    group: security
+    severity: hard
+    title: Don't build queries with template strings
+    body: >-
+      Use parameterized queries or the driver's binding API. Template literals in
+      SQL are injection waiting to happen.
+    source: OWASP C3
+
+  - id: ap-leaking-errors-to-client
+    group: security
+    severity: hard
+    title: Don't return raw errors to callers
+    body: >-
+      Return a stable, generic error and keep the detail in the log. Stack traces
+      disclose internals to anyone who can trigger a failure.
+    source: OWASP C3

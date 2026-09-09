@@ -9,23 +9,32 @@
     <h1 class="page-title">Standards</h1>
     <p class="page-sub">Health of every standards project stored in the database. Click a row for the file-by-file fix-it list.</p>
   </div>
-  {% if is_admin and projects %}
-  <a href="/dashboard/standards/{{ projects[0].project }}/new" class="btn btn-primary" style="align-self:flex-start">
-    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-    New doc
-  </a>
+  {% if is_admin %}
+  <div style="display:flex;gap:.5rem;align-self:flex-start">
+    <a href="/dashboard/standards/new-project" class="btn btn-primary">
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      New project
+    </a>
+    {% if projects %}
+    <a href="/dashboard/standards/{{ projects[0].project }}/new" class="btn btn-ghost">New doc</a>
+    {% endif %}
+  </div>
   {% endif %}
 </div>
+
+{% if request.query_params.get("deleted") %}
+<div class="callout" style="margin-bottom:16px">
+  <div>Project deleted.</div>
+</div>
+{% endif %}
 
 {% if not projects %}
 <div class="callout">
   <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;margin-top:1px"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
   {% if is_admin %}
-  <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">
-    <span>No standards projects yet. Name a project to create its first doc:</span>
-    <input type="text" id="first-project-name" placeholder="e.g. nexre"
-           style="padding:.35rem .6rem;border:1px solid var(--border,#e5e7eb);border-radius:.4rem;font-size:.8125rem;font-family:inherit">
-    <button type="button" class="btn btn-primary" onclick="var n=document.getElementById('first-project-name').value.trim(); if(n) location.href='/dashboard/standards/'+encodeURIComponent(n)+'/new';">Create</button>
+  <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
+    <span>No standards projects yet. Start from a language template to get a complete, passing set of docs.</span>
+    <a href="/dashboard/standards/new-project" class="btn btn-primary">New project</a>
   </div>
   {% else %}
   <div>No standards projects found. Ask an admin to add one.</div>

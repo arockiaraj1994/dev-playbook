@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% import "_wizard.html" as wiz %}
+{% block title %}Workflows - {{ state.project }}{% endblock %}
+{% block crumb %}<a href="/dashboard/standards" style="color:inherit">Standards</a> <span class="crumbs-sep">/</span> <a href="/dashboard/standards/new-project" style="color:inherit">New Project Standards</a> <span class="crumbs-sep">/</span> <span class="current">Workflows</span>{% endblock %}
+
+{% block content %}
+
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Workflows</h1>
+    <p class="page-sub">Step-by-step flows an agent follows per task type. Four are required; the rest are optional.</p>
+  </div>
+</div>
+
+{{ wiz.stepper(steps, current_step) }}
+
+<form method="post" action="{{ next_action }}">
+  <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+  {{ wiz.carry(state, skip="workflows") }}
+
+  <div class="card" style="padding:1.25rem;margin-bottom:16px">
+    <h2 class="card-heading">Required</h2>
+    {% for wf in workflows if wf.required %}
+    <label class="rule-row">
+      <input type="checkbox" checked disabled>
+      <input type="hidden" name="workflow" value="{{ wf.id }}">
+      <span class="rule-body">
+        <span class="rule-title">{{ wf.title }}</span>
+        <span class="badge badge-locked">required</span>
+        <span class="rule-text">{{ wf.description }}</span>
+        {% if wf.triggers %}<span class="rule-source">{{ wf.triggers | join(', ') }}</span>{% endif %}
+      </span>
+    </label>
+    {% endfor %}
+  </div>
+
+  <div class="card" style="padding:1.25rem;margin-bottom:16px">
+    <h2 class="card-heading">Optional</h2>
+    {% for wf in workflows if not wf.required %}
+    <label class="rule-row">
+      <input type="checkbox" name="workflow" value="{{ wf.id }}"
+             {% if wf.id in state.workflows %}checked{% endif %}>
+      <span class="rule-body">
+        <span class="rule-title">{{ wf.title }}</span>
+        <span class="rule-text">{{ wf.description }}</span>
+        {% if wf.triggers %}<span class="rule-source">{{ wf.triggers | join(', ') }}</span>{% endif %}
+      </span>
+    </label>
+    {% endfor %}
+  </div>
+
+  {{ wiz.nav(back_action, next_label) }}
+</form>
+
+{% endblock %}

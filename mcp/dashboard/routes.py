@@ -455,13 +455,10 @@ def build_dashboard_routes(
     # -- Standards (corpus health, SQLite-backed) ----------------------------
 
     _GROUP_ORDER = [
-        "AGENTS.md",
-        "INDEX.md",
-        "README.md",
+        "",  # root-level files (AGENTS.md, INDEX.md, README.md, ...) share one group
         "core",
         "languages",
         "patterns",
-        "skills",
         "workflows",
         "gates",
     ]
@@ -475,11 +472,24 @@ def build_dashboard_routes(
     def _group_files(files: list) -> list[tuple[str, list]]:
         groups: dict[str, list] = {}
         for fs in files:
-            head = (
-                fs.relative_path.split("/", 1)[0] if "/" in fs.relative_path else fs.relative_path
-            )
+            head = fs.relative_path.split("/", 1)[0] if "/" in fs.relative_path else ""
             groups.setdefault(head, []).append(fs)
-        return sorted(groups.items(), key=lambda kv: _group_key(kv[0]))
+        items = sorted(groups.items(), key=lambda kv: _group_key(kv[0]))
+
+        # "languages" gets a second level of nesting: one card per language
+        # (kotlin, python, ...) holding that language's standards/testing/
+        # anti-patterns files, instead of one flat row per file.
+        result: list[tuple[str, list]] = []
+        for name, group_files in items:
+            if name == "languages":
+                by_language: dict[str, list] = {}
+                for fs in group_files:
+                    lang = fs.relative_path.split("/", 2)[1]
+                    by_language.setdefault(lang, []).append(fs)
+                result.append((name, sorted(by_language.items())))
+            else:
+                result.append((name, group_files))
+        return result
 
     def _not_found(what: str, value: str) -> Response:
         return HTMLResponse(
@@ -558,6 +568,352 @@ def build_dashboard_routes(
         if principal is None or getattr(principal, "role", "user") != "admin":
             return _forbidden(request)
         return None
+
+    # -- New project wizard --------------------------------------------------
+    #
+    # The step sequence depends on how many languages were picked, so it is
+    # computed rather than hardcoded: six steps for one language, eight for
+    # three. _wizard_sequence is the single source of that order - the stepper,
+    # the Next and Back buttons and the review page's Edit links all derive from
+    # it, so nothing desynchronises when the language selection changes.
+    #
+    # Each step is a POST that renders the next and carries the whole selection
+    # forward in hidden fields. Stateless, so a step can be POSTed to directly -
+    # which is why every step re-validates rather than trusting an earlier one.
+    #
+    # These handlers only parse the form and render. Every scaffolding decision
+    # lives in scaffold_service, so the planned MCP tool runs identical rules.
+
+    _WIZARD_BASE = "/dashboard/standards/new-project"
+
+    def _wizard_sequence(state: dict) -> list[dict]:
+        """Ordered steps for the current selection: (key, label, action)."""
+        import scaffold_service
+
+        steps = [{"key": "languages", "label": "Project & languages", "action": _WIZARD_BASE}]
+        steps.append(
+            {"key": "base", "label": "Shared rules", "action": f"{_WIZARD_BASE}/rules/base"}
+        )
+        by_id = {p.id: p for p in scaffold_service.list_languages()}
+        for lang_id in state.get("languages", []):
+            pack = by_id.get(lang_id)
+            if pack is None:
+                continue
+            steps.append(
+                {
+                    "key": pack.id,
+                    "label": f"{pack.title} rules",
+                    "action": f"{_WIZARD_BASE}/rules/{pack.id}",
+                }
+            )
+        steps += [
+            {"key": "git", "label": "Git rules", "action": f"{_WIZARD_BASE}/git-rules"},
+            {"key": "workflows", "label": "Workflows", "action": f"{_WIZARD_BASE}/workflows"},
+            {"key": "review", "label": "Review", "action": f"{_WIZARD_BASE}/review"},
+        ]
+        for i, step in enumerate(steps, start=1):
+            step["number"] = i
+        return steps
+
+    def _step_links(state: dict, key: str) -> dict:
+        """Where this step's Next and Back buttons point."""
+        steps = _wizard_sequence(state)
+        index = next((i for i, s in enumerate(steps) if s["key"] == key), 0)
+        nxt = steps[index + 1] if index + 1 < len(steps) else None
+        prev = steps[index - 1] if index > 0 else None
+        return {
+            "steps": steps,
+            "current_step": steps[index]["number"] if steps else 1,
+            "next_action": nxt["action"] if nxt else None,
+            "next_label": f"Next: {nxt['label']}" if nxt else "Continue",
+            "back_action": prev["action"] if prev else None,
+        }
+
+    def _wizard_state(form) -> dict:
+        """The selection so far, as carried between steps."""
+        return {
+            "project": str(form.get("project", "")).strip(),
+            "languages": [str(v) for v in form.getlist("language")],
+            "placeholders": {
+                k[len("placeholder_") :]: str(v).strip()
+                for k, v in form.multi_items()
+                if k.startswith("placeholder_") and str(v).strip()
+            },
+            "language_rules": [str(v) for v in form.getlist("language_rule")],
+            "git_rules": [str(v) for v in form.getlist("git_rule")],
+            "workflows": [str(v) for v in form.getlist("workflow")],
+        }
+
+    def _wizard_ctx(request: Request, key: str, state: dict, **extra) -> dict:
+        return _ctx(request, page="standards", state=state, **_step_links(state, key), **extra)
+
+    def _rule_sections(pack, *, git: bool):
+        """This pack's rule groups, as (label, doc-or-contribution) pairs.
+
+        Git rules are picked on their own step, so they are separated out here
+        rather than appearing among the shared rules.
+        """
+        import scaffold_service
+
+        owner_labels = {
+            d.doc: d.display_label for d in scaffold_service.get_base().rule_docs
+        }
+        sections = []
+        for doc in pack.rule_docs:
+            if (doc.doc == "core/git.md") != git:
+                continue
+            sections.append((doc.display_label, doc))
+        if not git:
+            for contribution in pack.contributions:
+                label = owner_labels.get(
+                    contribution.contributes_to, contribution.contributes_to
+                )
+                sections.append((label, contribution))
+        return sections
+
+    async def project_new_view(request: Request) -> Response:
+        """Step 1. Also serves POST, so Back from step 2 returns here intact."""
+        forbidden = _admin_or_forbidden(request)
+        if forbidden:
+            return forbidden
+        import scaffold_service
+
+        if request.method == "POST":
+            form = await request.form()
+            csrf_err = _validate_csrf_or_403(request, form)
+            if csrf_err:
+                return csrf_err
+            state = _wizard_state(form)
+        else:
+            state = {
+                "project": "",
+                "languages": [],
+                "placeholders": {},
+                "language_rules": [],
+                "git_rules": [],
+                "workflows": [],
+            }
+        return templates.TemplateResponse(
+            request,
+            "wizard_languages.html",
+            _wizard_ctx(request, "languages", state, languages=scaffold_service.list_languages()),
+        )
+
+    async def _step1_errors(state: dict) -> list[str]:
+        import scaffold_service
+
+        errors = []
+        if not scaffold_service.is_valid_project_name(state["project"]):
+            errors.append("Project name must be letters, digits, dot, dash or underscore.")
+        if standards and state["project"] in await standards.list_projects():
+            errors.append(f"A project named '{state['project']}' already exists.")
+        if not state["languages"]:
+            errors.append("Select at least one language.")
+        return errors
+
+    def _back_to_step1(request: Request, state: dict, errors: list[str]) -> Response:
+        import scaffold_service
+
+        return templates.TemplateResponse(
+            request,
+            "wizard_languages.html",
+            _wizard_ctx(
+                request, "languages", state,
+                languages=scaffold_service.list_languages(), errors=errors,
+            ),
+            status_code=400,
+        )
+
+    async def project_step_rules(request: Request) -> Response:
+        """One handler for every rule step: shared rules and each language."""
+        forbidden = _admin_or_forbidden(request)
+        if forbidden:
+            return forbidden
+        import scaffold_service
+
+        form = await request.form()
+        csrf_err = _validate_csrf_or_403(request, form)
+        if csrf_err:
+            return csrf_err
+        state = _wizard_state(form)
+        pack_id = request.path_params["pack"]
+
+        errors = await _step1_errors(state)
+        languages: list = []
+        if not errors:
+            try:
+                base, languages = scaffold_service.resolve_packs(state["languages"])
+            except scaffold_service.ScaffoldError as exc:
+                errors.append(str(exc))
+        if not errors:
+            missing = [
+                name
+                for name in scaffold_service.required_placeholders(languages)
+                if not state["placeholders"].get(name)
+            ]
+            errors += [f"'{name}' is required by the selected languages." for name in missing]
+        if errors:
+            return _back_to_step1(request, state, errors)
+
+        packs = {p.id: p for p in [base, *languages]}
+        pack = packs.get(pack_id)
+        if pack is None:
+            return _not_found("Rule step", pack_id)
+
+        # First visit pre-ticks this pack's defaults; a return visit keeps what
+        # was chosen. Other packs' selections travel untouched in hidden fields.
+        selected = set(state["language_rules"])
+        if not selected & {r.id for r in pack.all_rules}:
+            selected |= pack.default_rule_ids() - {
+                r.id for d in pack.rule_docs if d.doc == "core/git.md" for r in d.rules
+            }
+        state["language_rules"] = sorted(selected)
+
+        sections = _rule_sections(pack, git=False)
+        return templates.TemplateResponse(
+            request,
+            "wizard_rules.html",
+            _wizard_ctx(
+                request, pack.id, state,
+                pack=pack, sections=sections, field="language_rule",
+                heading=("Shared rules" if pack.kind == "base" else f"{pack.title} rules"),
+                blurb=(
+                    "Rules that apply whatever the language."
+                    if pack.kind == "base"
+                    else f"Rules specific to {pack.title} {pack.language_version}."
+                ),
+            ),
+        )
+
+    async def project_step_git_rules(request: Request) -> Response:
+        """Git rules, which come from the base pack."""
+        forbidden = _admin_or_forbidden(request)
+        if forbidden:
+            return forbidden
+        import scaffold_service
+
+        form = await request.form()
+        csrf_err = _validate_csrf_or_403(request, form)
+        if csrf_err:
+            return csrf_err
+        state = _wizard_state(form)
+
+        base = scaffold_service.get_base()
+        sections = _rule_sections(base, git=True)
+        if not state["git_rules"]:
+            git_ids = {r.id for _, d in sections for r in d.rules}
+            state["git_rules"] = sorted(base.default_rule_ids() & git_ids)
+        return templates.TemplateResponse(
+            request,
+            "wizard_rules.html",
+            _wizard_ctx(
+                request, "git", state,
+                pack=base, sections=sections, field="git_rule",
+                heading="Git rules",
+                blurb="How a change reaches the default branch. These become core/git.md.",
+            ),
+        )
+
+    async def project_step_workflows(request: Request) -> Response:
+        """Required workflows are locked; the extras are optional."""
+        forbidden = _admin_or_forbidden(request)
+        if forbidden:
+            return forbidden
+        import scaffold_service
+
+        form = await request.form()
+        csrf_err = _validate_csrf_or_403(request, form)
+        if csrf_err:
+            return csrf_err
+        state = _wizard_state(form)
+
+        base = scaffold_service.get_base()
+        if not state["workflows"]:
+            state["workflows"] = [w.id for w in base.workflows]
+        return templates.TemplateResponse(
+            request,
+            "wizard_workflows.html",
+            _wizard_ctx(request, "workflows", state, workflows=base.workflows),
+        )
+
+    async def project_step_review(request: Request) -> Response:
+        """A dry run of exactly what will be written."""
+        forbidden = _admin_or_forbidden(request)
+        if forbidden:
+            return forbidden
+        import scaffold_service
+
+        form = await request.form()
+        csrf_err = _validate_csrf_or_403(request, form)
+        if csrf_err:
+            return csrf_err
+        state = _wizard_state(form)
+
+        try:
+            base, languages = scaffold_service.resolve_packs(state["languages"])
+            documents = scaffold_service.preview(
+                state["languages"],
+                state["project"],
+                state["placeholders"],
+                set(state["language_rules"]) | set(state["git_rules"]),
+                set(state["workflows"]),
+            )
+        except scaffold_service.ScaffoldError as exc:
+            return HTMLResponse(
+                f"<h1>400 Bad Request</h1><p>{_html_escape(str(exc))}</p>", status_code=400
+            )
+
+        return templates.TemplateResponse(
+            request,
+            "wizard_review.html",
+            _wizard_ctx(
+                request, "review", state,
+                base=base, languages=languages, documents=documents,
+                # Edit links come from the sequence so they follow the selection.
+                rules_action=f"{_WIZARD_BASE}/rules/base",
+                workflows_action=f"{_WIZARD_BASE}/workflows",
+            ),
+        )
+
+    async def project_create(request: Request) -> Response:
+        """Create. Every value is re-validated inside the service."""
+        forbidden = _admin_or_forbidden(request)
+        if forbidden:
+            return forbidden
+        if not standards:
+            return _not_found("Project", "")
+        import scaffold_service
+        from standards_store import ProjectExists
+
+        form = await request.form()
+        csrf_err = _validate_csrf_or_403(request, form)
+        if csrf_err:
+            return csrf_err
+        state = _wizard_state(form)
+
+        principal = scope_principal(request.scope)
+        try:
+            await scaffold_service.scaffold_project(
+                standards,
+                languages=state["languages"],
+                project=state["project"],
+                placeholders=state["placeholders"],
+                selected_rule_ids=set(state["language_rules"]) | set(state["git_rules"]),
+                workflow_ids=set(state["workflows"]),
+                actor=principal.user_name if principal else None,
+            )
+        except ProjectExists:
+            return HTMLResponse(
+                f"<h1>409 Conflict</h1><p>A project named "
+                f"<code>{_html_escape(state['project'])}</code> already exists.</p>",
+                status_code=409,
+            )
+        except scaffold_service.ScaffoldError as exc:
+            return HTMLResponse(
+                f"<h1>400 Bad Request</h1><p>{_html_escape(str(exc))}</p>", status_code=400
+            )
+
+        return RedirectResponse(f"/dashboard/standards/{state['project']}", status_code=303)
 
     async def standard_new_view(request: Request) -> Response:
         forbidden = _admin_or_forbidden(request)
@@ -731,6 +1087,36 @@ def build_dashboard_routes(
 
         return RedirectResponse(f"/dashboard/standards/{name}", status_code=303)
 
+    async def project_delete(request: Request) -> Response:
+        """Delete a whole project. Irreversible, so the form makes the user type
+        the project name and the handler re-checks it server-side."""
+        forbidden = _admin_or_forbidden(request)
+        if forbidden:
+            return forbidden
+        if not standards:
+            return _not_found("Project", request.path_params.get("name", ""))
+        name = request.path_params["name"]
+        form = await request.form()
+        csrf_err = _validate_csrf_or_403(request, form)
+        if csrf_err:
+            return csrf_err
+
+        if name not in await standards.list_projects():
+            return _not_found("Project", name)
+
+        # The typed confirmation is a real check, not decoration: a mis-aimed
+        # POST would otherwise destroy an entire corpus.
+        if str(form.get("confirm", "")).strip() != name:
+            return HTMLResponse(
+                "<h1>400 Bad Request</h1><p>Type the project name exactly to confirm "
+                f"deletion of <code>{_html_escape(name)}</code>.</p>"
+                f'<p><a href="/dashboard/standards/{name}">Go back</a></p>',
+                status_code=400,
+            )
+
+        await standards.delete_project(name)
+        return RedirectResponse("/dashboard/standards?deleted=1", status_code=303)
+
     async def standard_delete(request: Request) -> Response:
         forbidden = _admin_or_forbidden(request)
         if forbidden:
@@ -755,7 +1141,31 @@ def build_dashboard_routes(
         Route("/searches", endpoint=searches_view, methods=["GET"]),
         Route("/activity", endpoint=activity_view, methods=["GET"]),
         Route("/standards", endpoint=standards_view, methods=["GET"]),
+        # Must precede /standards/{name}: Starlette matches in order, so these
+        # literal paths would otherwise be swallowed by the {name} patterns.
+        Route("/standards/new-project", endpoint=project_new_view, methods=["GET", "POST"]),
+        # One handler serves every rule step: base plus each language pack, so
+        # adding a fourth language needs no route change.
+        Route(
+            "/standards/new-project/rules/{pack}",
+            endpoint=project_step_rules,
+            methods=["POST"],
+        ),
+        Route(
+            "/standards/new-project/git-rules",
+            endpoint=project_step_git_rules,
+            methods=["POST"],
+        ),
+        Route(
+            "/standards/new-project/workflows",
+            endpoint=project_step_workflows,
+            methods=["POST"],
+        ),
+        Route("/standards/new-project/review", endpoint=project_step_review, methods=["POST"]),
+        Route("/standards/new-project/create", endpoint=project_create, methods=["POST"]),
         Route("/standards/{name}/new", endpoint=standard_new_view, methods=["GET"]),
+        # Must precede the {path:path} routes, which would otherwise swallow it.
+        Route("/standards/{name}/delete-project", endpoint=project_delete, methods=["POST"]),
         Route("/standards/{name}/{path:path}/delete", endpoint=standard_delete, methods=["POST"]),
         Route("/standards/{name}/{path:path}", endpoint=standard_create, methods=["POST"]),
         Route("/standards/{name}", endpoint=standard_detail_view, methods=["GET"]),
@@ -807,7 +1217,8 @@ def _frontmatter_only(content: str) -> str:
 _RULE_CATALOG: dict[str, tuple[str, str]] = {
     "required-file": (
         "hard",
-        "A file every standards project must ship (AGENTS.md, core/*, gates/README.md).",
+        "A file every standards project must ship "
+        "(AGENTS.md, ARCHITECTURE.md, core/*, gates/README.md).",
     ),
     "required-workflow": (
         "hard",

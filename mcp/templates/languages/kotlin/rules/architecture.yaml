@@ -1,0 +1,114 @@
+contributes_to: ARCHITECTURE.md
+section: Kotlin
+section_intro: |
+  Root package: `{{package}}`.
+
+  ### Modules
+
+  | Package | Purpose |
+  | --- | --- |
+  | `{{package}}.domain` | Domain model and business rules. Pure Kotlin. |
+  | `{{package}}.application` | Use cases orchestrating domain and ports. |
+  | `{{package}}.adapter.inbound` | Inbound adapters: handlers, listeners, CLI. |
+  | `{{package}}.adapter.outbound` | Outbound adapters: persistence, clients. |
+  | `{{package}}.di` | Wiring and configuration. |
+
+  Fill this table in for the real module set before the first feature lands.
+section_outro: |
+  ### Data flow
+
+  A request enters an inbound adapter, which maps transport types to application
+  inputs. The application layer orchestrates domain objects and calls outbound
+  ports. Outbound adapters implement those ports. Control flows inward;
+  dependencies point inward. Observable reads are exposed as `Flow`; one-shot
+  work is a `suspend` function.
+
+  ### Where new code goes
+
+  | New thing | Package |
+  | --- | --- |
+  | Entity or value object | `{{package}}.domain` |
+  | Use case | `{{package}}.application` |
+  | Port interface | `{{package}}.application.port` |
+  | Handler or listener | `{{package}}.adapter.inbound` |
+  | Repository or client | `{{package}}.adapter.outbound` |
+  | Wiring | `{{package}}.di` |
+
+rules:
+  - id: domain-is-pure-kotlin
+    group: dependency
+    severity: hard
+    locked: true
+    title: Keep frameworks out of the domain package
+    body: >-
+      `domain` must not import a persistence, serialization, HTTP or
+      dependency injection framework. It depends on the standard library and
+      on itself.
+
+  - id: dependencies-point-inward
+    group: dependency
+    severity: hard
+    locked: true
+    title: Adapters may use the domain, never the reverse
+    body: >-
+      `adapter` may depend on `application`; `application` may depend on
+      `domain`. Never the reverse. `domain` depends on nothing in this
+      project.
+
+  - id: adapters-do-not-depend-on-adapters
+    group: dependency
+    severity: hard
+    title: Handlers must not call database code directly
+    body: >-
+      An inbound adapter must not import an outbound adapter, or vice versa.
+      They communicate only through the application layer.
+
+  - id: ports-owned-by-application
+    group: dependency
+    severity: soft
+    title: Declare the interface where it is used
+    body: >-
+      Interfaces for outbound dependencies are declared in
+      `application.port` and implemented in `adapter.outbound`, inverting
+      the dependency.
+
+  - id: no-domain-types-across-boundary
+    group: responsibility
+    severity: hard
+    title: Don't return stored entities from a handler
+    body: >-
+      Inbound adapters own their request and response types. Persistence
+      entities never appear in a handler signature.
+
+  - id: adapters-translate-only
+    group: responsibility
+    severity: hard
+    title: Keep business decisions out of handlers
+    body: >-
+      An adapter converts between transport or storage types and application
+      types. Business decisions belong in the domain or the use case.
+
+  - id: mapping-lives-in-adapter
+    group: responsibility
+    severity: hard
+    title: Convert stored rows to domain objects in the adapter
+    body: >-
+      Conversion between a stored row and a domain object happens inside the
+      adapter - never in a use case, and never by making the domain aware of
+      storage.
+
+  - id: constructor-injection
+    group: responsibility
+    severity: hard
+    title: Inject dependencies through the constructor
+    body: >-
+      Declare collaborators as constructor parameters. Service locators and
+      globally reachable singletons hide dependencies and defeat testing.
+
+  - id: suspend-or-flow-at-ports
+    group: responsibility
+    severity: soft
+    title: Interfaces that do I/O return suspend or Flow
+    body: >-
+      A port that performs I/O is a `suspend` function for one-shot work or
+      returns `Flow` for a stream. It never blocks the caller's thread.

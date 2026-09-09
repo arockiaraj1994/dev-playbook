@@ -1,0 +1,13 @@
+id: kotlin
+kind: language
+title: Kotlin
+language: kotlin
+language_version: "2.1"
+template_version: "1.0.0"
+gate: gates/scripts/verify-kotlin.sh
+description: >-
+  Framework-neutral Kotlin standards drawn from the official Kotlin coding
+  conventions, structured concurrency practice, and the OWASP Top 10
+  Proactive Controls.
+placeholders:
+  - package

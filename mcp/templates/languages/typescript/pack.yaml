@@ -1,0 +1,11 @@
+id: typescript
+kind: language
+title: TypeScript
+language: typescript
+language_version: "5.x"
+template_version: "1.0.0"
+gate: gates/scripts/verify-typescript.sh
+description: >-
+  Framework-neutral TypeScript standards drawn from the typescript-eslint
+  strict-type-checked configuration and the OWASP Top 10 Proactive Controls.
+placeholders: []

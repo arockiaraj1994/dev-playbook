@@ -1,0 +1,112 @@
+contributes_to: ARCHITECTURE.md
+section: Java
+section_intro: |
+  Root package: `{{package}}`.
+
+  ### Modules
+
+  | Package | Purpose |
+  | --- | --- |
+  | `{{package}}.domain` | Domain model and business rules. Plain Java. |
+  | `{{package}}.application` | Use cases orchestrating domain and ports. |
+  | `{{package}}.adapter.in` | Inbound adapters: controllers, listeners, CLI. |
+  | `{{package}}.adapter.out` | Outbound adapters: persistence, HTTP clients. |
+  | `{{package}}.config` | Wiring and configuration. |
+
+  Fill this table in for the real module set before the first feature lands.
+section_outro: |
+  ### Data flow
+
+  Requests enter through an inbound adapter, which maps transport types to
+  application inputs. The application layer orchestrates domain objects and calls
+  outbound ports. Outbound adapters implement those ports. Control flows inward;
+  dependencies point inward.
+
+  ### Where new code goes
+
+  | New thing | Package |
+  | --- | --- |
+  | Entity or value object | `{{package}}.domain` |
+  | Use case | `{{package}}.application` |
+  | Port interface | `{{package}}.application.port` |
+  | Controller or listener | `{{package}}.adapter.in` |
+  | Repository or client | `{{package}}.adapter.out` |
+  | Wiring | `{{package}}.config` |
+
+rules:
+  - id: domain-has-no-framework-imports
+    group: dependency
+    severity: hard
+    locked: true
+    title: Keep frameworks out of the domain package
+    body: >-
+      `domain` must not import a web, persistence, serialization or
+      dependency injection framework. It depends on the JDK and on itself.
+
+  - id: dependencies-point-inward
+    group: dependency
+    severity: hard
+    locked: true
+    title: Adapters may use the domain, never the reverse
+    body: >-
+      `adapter` may depend on `application`; `application` may depend on
+      `domain`. Never the reverse. `domain` depends on nothing in this
+      project.
+
+  - id: adapters-do-not-depend-on-adapters
+    group: dependency
+    severity: hard
+    title: Controllers must not call database code directly
+    body: >-
+      An inbound adapter must not import an outbound adapter, or vice versa.
+      They communicate only through the application layer.
+
+  - id: ports-owned-by-application
+    group: dependency
+    severity: soft
+    title: Declare the interface where it is used
+    body: >-
+      Interfaces for outbound dependencies are declared in `application` and
+      implemented in `adapter.out`, so the direction of the dependency is
+      inverted.
+
+  - id: no-entities-across-boundary
+    group: responsibility
+    severity: hard
+    title: Don't return database entities from a controller
+    body: >-
+      Inbound adapters map to and from their own request and response types.
+      Persistence entities never appear in a controller signature.
+
+  - id: adapters-hold-no-business-logic
+    group: responsibility
+    severity: hard
+    title: Keep business decisions out of controllers
+    body: >-
+      An adapter converts between transport or storage types and application
+      types. Business decisions belong in the domain or the use case.
+
+  - id: use-cases-are-transactional-boundary
+    group: responsibility
+    severity: soft
+    title: Start and commit transactions in the service layer
+    body: >-
+      Start and commit a unit of work in the application layer, not in an
+      adapter and not in the domain.
+
+  - id: constructor-injection
+    group: responsibility
+    severity: hard
+    title: Inject dependencies through the constructor
+    body: >-
+      Declare collaborators as final constructor parameters. Field and
+      setter injection hide dependencies and make objects constructible in
+      invalid states.
+
+  - id: no-static-mutable-singletons
+    group: responsibility
+    severity: hard
+    title: Don't keep changing state in static fields
+    body: >-
+      Business state must not live in a static field. Pass collaborators
+      explicitly so behaviour can be substituted in a test.
