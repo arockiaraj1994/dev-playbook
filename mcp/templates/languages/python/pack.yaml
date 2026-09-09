@@ -1,0 +1,12 @@
+id: python
+kind: language
+title: Python
+language: python
+language_version: "3.12"
+template_version: "1.0.0"
+gate: gates/scripts/verify-python.sh
+description: >-
+  Framework-neutral Python standards drawn from PEP 8, the ruff and mypy
+  strict defaults, and the OWASP Top 10 Proactive Controls.
+placeholders:
+  - python_package

@@ -64,13 +64,19 @@
     <h2 class="card-heading">Template values</h2>
     <p class="se-hint" style="margin:0 0 1rem">Substituted into the generated documents.</p>
     {% set seen = [] %}
+    {% set ph_hints = {
+      "package": "com.example.app",
+      "python_package": "payments_api",
+      "module": "github.com/acme/payments",
+      "crate": "payments_api"
+    } %}
     {% for pack in languages %}
       {% for p in pack.placeholders %}{% if p not in seen %}{% set _ = seen.append(p) %}
       <div class="se-field placeholder-field" data-name="{{ p }}" hidden>
         <label for="ph_{{ p }}">{{ p }}</label>
         <input type="text" id="ph_{{ p }}" data-ph-name="{{ p }}"
                value="{{ state.placeholders.get(p, '') }}"
-               placeholder="{% if p == 'package' %}com.example.app{% endif %}"
+               placeholder="{{ ph_hints.get(p, '') }}"
                autocomplete="off" spellcheck="false">
       </div>
       {% endif %}{% endfor %}

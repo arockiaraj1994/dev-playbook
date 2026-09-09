@@ -1,0 +1,110 @@
+contributes_to: ARCHITECTURE.md
+section: Go
+section_intro: |
+  Module: `{{module}}`.
+
+  ### Packages
+
+  | Package | Purpose |
+  | --- | --- |
+  | `internal/domain` | Types and business rules. No I/O, no framework. |
+  | `internal/application` | Use cases, and the interfaces they consume. |
+  | `internal/adapters/inbound` | HTTP handlers, CLI, message consumers. |
+  | `internal/adapters/outbound` | Database clients, HTTP clients, queues. |
+  | `cmd/<binary>` | Composition root, flag and environment parsing. |
+
+  Fill this table in for the real package set before the first feature lands.
+section_outro: |
+  ### Data flow
+
+  A request enters an inbound adapter, which decodes and validates it into
+  domain types. The application layer orchestrates domain functions and calls
+  the interfaces it declared. Outbound adapters satisfy those interfaces
+  implicitly. Control flows inward; dependencies point inward.
+
+  ### Where new code goes
+
+  | New thing | Location |
+  | --- | --- |
+  | Domain type or rule | `internal/domain/` |
+  | Use case | `internal/application/` |
+  | Dependency interface | The application package that calls it |
+  | HTTP handler | `internal/adapters/inbound/` |
+  | Client or repository | `internal/adapters/outbound/` |
+  | Wiring | `cmd/<binary>/main.go` |
+
+rules:
+  - id: domain-has-no-io
+    group: dependency
+    severity: hard
+    locked: true
+    title: Keep I/O out of the domain package
+    body: >-
+      `internal/domain` must not import `net/http`, `database/sql`, `os` or any
+      framework. It depends on the standard library's pure parts and on itself.
+
+  - id: dependencies-point-inward
+    group: dependency
+    severity: hard
+    locked: true
+    title: Adapters may use the domain, never the reverse
+    body: >-
+      `adapters` may import `application`; `application` may import `domain`.
+      Never the reverse, and never around a layer to skip one.
+
+  - id: interfaces-defined-by-consumer
+    group: dependency
+    severity: hard
+    title: Declare an interface where it is used
+    body: >-
+      The application package declares the method set it needs; the adapter
+      returns a concrete type that happens to satisfy it. Defining the interface
+      beside the implementation inverts the dependency the wrong way.
+
+  - id: internal-by-default
+    group: dependency
+    severity: soft
+    title: Put packages under internal until shared
+    body: >-
+      `internal/` is enforced by the compiler. Promote a package to `pkg/` when
+      something outside this module actually imports it, not before.
+
+  - id: adapters-do-not-import-adapters
+    group: dependency
+    severity: hard
+    title: HTTP handlers must not call the database directly
+    body: >-
+      An inbound adapter must not import an outbound adapter, or the reverse.
+      They communicate through the application layer.
+
+  - id: no-domain-types-over-the-wire
+    group: responsibility
+    severity: hard
+    title: Don't put JSON tags on domain structs
+    body: >-
+      Inbound adapters own their request and response structs. Tagging a domain
+      type makes every internal rename a breaking API change.
+
+  - id: adapters-translate-only
+    group: responsibility
+    severity: hard
+    title: Keep business decisions out of handlers
+    body: >-
+      An adapter converts between transport or storage shapes and domain types.
+      Business decisions belong in the domain or the use case.
+
+  - id: composition-root-only-wiring
+    group: responsibility
+    severity: soft
+    title: Build concrete dependencies in main only
+    body: >-
+      Packages receive their dependencies as constructor arguments. Only
+      `cmd/<binary>` constructs concrete implementations and reads configuration.
+
+  - id: no-package-level-state
+    group: responsibility
+    severity: hard
+    title: Don't keep a client in a package variable
+    body: >-
+      A package-level connection, logger or cache is a global that every test
+      shares and no caller can replace. Hold it in a struct built by `main`.

@@ -1,0 +1,115 @@
+contributes_to: ARCHITECTURE.md
+section: Python
+section_intro: |
+  Import root: `src/{{python_package}}/`.
+
+  ### Modules
+
+  | Package | Purpose |
+  | --- | --- |
+  | `{{python_package}}.domain` | Types and business rules. No I/O, no framework. |
+  | `{{python_package}}.application` | Use cases orchestrating domain and ports. |
+  | `{{python_package}}.adapters.inbound` | HTTP handlers, CLI, message consumers. |
+  | `{{python_package}}.adapters.outbound` | Database clients, HTTP clients, queues. |
+  | `{{python_package}}.config` | Composition root and settings parsing. |
+
+  Fill this table in for the real module set before the first feature lands.
+section_outro: |
+  ### Data flow
+
+  A request enters an inbound adapter, which validates it and maps it to
+  application inputs. The application layer orchestrates domain functions and
+  calls outbound ports, declared there as `Protocol` classes. Outbound adapters
+  satisfy those protocols structurally. Control flows inward; dependencies point
+  inward.
+
+  ### Where new code goes
+
+  | New thing | Location |
+  | --- | --- |
+  | Domain type or rule | `{{python_package}}/domain/` |
+  | Use case | `{{python_package}}/application/` |
+  | Port protocol | `{{python_package}}/application/ports.py` |
+  | HTTP handler | `{{python_package}}/adapters/inbound/` |
+  | Client or repository | `{{python_package}}/adapters/outbound/` |
+  | Wiring | `{{python_package}}/config/` |
+
+rules:
+  - id: domain-has-no-io
+    group: dependency
+    severity: hard
+    locked: true
+    title: Keep I/O out of the domain package
+    body: >-
+      `{{python_package}}.domain` must not import a database driver, an HTTP
+      client, `os`, `pathlib` or a web framework. It depends on the standard
+      library's pure parts and on itself.
+
+  - id: dependencies-point-inward
+    group: dependency
+    severity: hard
+    locked: true
+    title: Adapters may use the domain, never the reverse
+    body: >-
+      `adapters` may import `application`; `application` may import `domain`.
+      Never the reverse, and never around a layer to skip one.
+
+  - id: ports-are-protocols
+    group: dependency
+    severity: hard
+    title: Declare outbound dependencies as Protocols
+    body: >-
+      An outbound dependency is a `Protocol` in the application layer, satisfied
+      structurally by the adapter. The adapter imports the application; the
+      application imports nothing of the adapter.
+
+  - id: no-relative-imports-across-packages
+    group: dependency
+    severity: soft
+    title: Import other packages by their full path
+    body: >-
+      `from ...adapters.outbound import x` reaching across a package is a
+      boundary violation in disguise. Use an absolute import of the package's
+      public entry point.
+
+  - id: adapters-do-not-import-adapters
+    group: dependency
+    severity: hard
+    title: HTTP handlers must not call the database directly
+    body: >-
+      An inbound adapter must not import an outbound adapter, or the reverse.
+      They communicate through the application layer.
+
+  - id: no-domain-types-over-the-wire
+    group: responsibility
+    severity: hard
+    title: Don't serialise domain objects straight to JSON
+    body: >-
+      Inbound adapters own their request and response models. Dumping a domain
+      dataclass makes every internal rename a breaking API change.
+
+  - id: adapters-translate-only
+    group: responsibility
+    severity: hard
+    title: Keep business decisions out of handlers
+    body: >-
+      An adapter converts between transport or storage shapes and application
+      types. Business decisions belong in the domain or the use case.
+
+  - id: composition-root-only-wiring
+    group: responsibility
+    severity: soft
+    title: Build concrete dependencies in one place only
+    body: >-
+      Modules receive their dependencies as arguments. Only
+      `{{python_package}}.config` constructs concrete implementations and reads
+      settings.
+
+  - id: settings-parsed-once
+    group: responsibility
+    severity: hard
+    title: Read the environment only at startup
+    body: >-
+      Configuration is parsed and validated once, into a frozen settings object.
+      An `os.environ` lookup buried in a function makes behaviour depend on when
+      it runs.

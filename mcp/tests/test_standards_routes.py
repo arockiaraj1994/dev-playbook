@@ -359,7 +359,7 @@ async def test_wizard_step1_lists_every_language(app_admin) -> None:
 
     body = client.get("/dashboard/standards/new-project").text
     assert "New Project Standards" in body
-    for lang in ("java", "typescript", "kotlin"):
+    for lang in ("go", "java", "kotlin", "python", "rust", "typescript"):
         assert f'value="{lang}"' in body
     # Languages are checkboxes now, not a single-choice radio.
     assert 'type="checkbox" name="language"' in body

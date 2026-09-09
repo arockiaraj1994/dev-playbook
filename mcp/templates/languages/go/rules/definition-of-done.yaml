@@ -1,0 +1,36 @@
+contributes_to: core/definition-of-done.md
+section: Go
+
+rules:
+  - id: dod-vet-and-staticcheck
+    group: mechanical
+    severity: hard
+    title: go vet and staticcheck report nothing
+    body: >-
+      Both run over `./...` with no new findings and no `//lint:ignore` added to
+      reach that state.
+
+  - id: dod-race-clean
+    group: mechanical
+    severity: hard
+    title: The suite passes with -race
+    body: >-
+      `go test -race -count=1 ./...` is green. `-count=1` defeats the test cache,
+      so the result is real.
+
+  - id: dod-exported-documented
+    group: correctness
+    severity: soft
+    title: Exported names have a doc comment
+    body: >-
+      Every exported identifier has a comment starting with its own name, because
+      that is what `go doc` and every reader will show.
+
+  - id: dod-govulncheck
+    group: security
+    severity: soft
+    title: govulncheck reports no reachable advisory
+    body: >-
+      `govulncheck ./...` is clean, or the exception is recorded with an expiry
+      date.
+    source: OWASP C2

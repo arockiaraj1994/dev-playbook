@@ -1,0 +1,114 @@
+contributes_to: ARCHITECTURE.md
+section: Rust
+section_intro: |
+  Crate: `{{crate}}`.
+
+  ### Modules
+
+  | Module | Purpose |
+  | --- | --- |
+  | `{{crate}}::domain` | Types and business rules. No I/O, no framework. |
+  | `{{crate}}::application` | Use cases, and the traits they consume. |
+  | `{{crate}}::adapters::inbound` | HTTP handlers, CLI, message consumers. |
+  | `{{crate}}::adapters::outbound` | Database clients, HTTP clients, queues. |
+  | `{{crate}}::config` | Composition root and settings parsing. |
+
+  Fill this table in for the real module set before the first feature lands. A
+  workspace splits the same boundaries into crates, which makes them enforceable
+  by Cargo rather than by review.
+section_outro: |
+  ### Data flow
+
+  A request enters an inbound adapter, which deserialises it into a private wire
+  type and converts it into domain types. The application layer orchestrates
+  domain functions and calls the traits it declared. Outbound adapters implement
+  those traits. Control flows inward; dependencies point inward.
+
+  ### Where new code goes
+
+  | New thing | Location |
+  | --- | --- |
+  | Domain type or rule | `src/domain/` |
+  | Use case | `src/application/` |
+  | Dependency trait | The application module that calls it |
+  | HTTP handler | `src/adapters/inbound/` |
+  | Client or repository | `src/adapters/outbound/` |
+  | Wiring | `src/main.rs` |
+
+rules:
+  - id: domain-has-no-io
+    group: dependency
+    severity: hard
+    locked: true
+    title: Keep I/O out of the domain module
+    body: >-
+      `domain` must not depend on a database driver, an HTTP client, `std::fs` or
+      a web framework. In a workspace it is the crate with the shortest
+      dependency list.
+
+  - id: dependencies-point-inward
+    group: dependency
+    severity: hard
+    locked: true
+    title: Adapters may use the domain, never the reverse
+    body: >-
+      `adapters` may use `application`; `application` may use `domain`. Never the
+      reverse, and never around a layer to skip one.
+
+  - id: traits-defined-by-consumer
+    group: dependency
+    severity: hard
+    title: Declare a trait where it is used
+    body: >-
+      The application module declares the trait it needs; the adapter implements
+      it. Defining the trait beside the implementation inverts the dependency the
+      wrong way.
+
+  - id: keep-modules-private
+    group: dependency
+    severity: soft
+    title: Export from the module root, not from inside
+    body: >-
+      Modules are private by default - keep them that way and `pub use` the
+      public surface at the root. `pub(crate)` is the widest most items ever need.
+
+  - id: adapters-do-not-import-adapters
+    group: dependency
+    severity: hard
+    title: HTTP handlers must not call the database directly
+    body: >-
+      An inbound adapter must not use an outbound adapter, or the reverse. They
+      communicate through the application layer.
+
+  - id: no-domain-types-over-the-wire
+    group: responsibility
+    severity: hard
+    title: Don't derive Serialize on domain types
+    body: >-
+      Inbound adapters own their request and response structs. Deriving
+      `Serialize` on a domain type makes every internal rename a breaking API
+      change.
+
+  - id: adapters-translate-only
+    group: responsibility
+    severity: hard
+    title: Keep business decisions out of handlers
+    body: >-
+      An adapter converts between transport or storage shapes and domain types.
+      Business decisions belong in the domain or the use case.
+
+  - id: composition-root-only-wiring
+    group: responsibility
+    severity: soft
+    title: Build concrete dependencies in main only
+    body: >-
+      Modules receive their dependencies through a constructor. Only `main.rs`
+      names a concrete implementation and reads configuration.
+
+  - id: no-global-mutable-state
+    group: responsibility
+    severity: hard
+    title: Don't reach for a static to share state
+    body: >-
+      A `static` client or cache is shared by every test and replaceable by no
+      caller. Hold it in a struct built at startup and pass it down.

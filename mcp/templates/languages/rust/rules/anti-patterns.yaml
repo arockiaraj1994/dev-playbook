@@ -1,0 +1,198 @@
+doc: languages/rust/anti-patterns.md
+label: Common mistakes
+merge: by-group
+title: Rust anti-patterns - {{project}}
+description: Patterns to avoid when writing Rust for {{project}}, and what to do instead.
+tags: [rust, anti-patterns]
+intro: |
+  Know these before writing code. Each one is a defect this project has decided
+  not to accept, not a matter of taste.
+groups:
+  - id: errors
+    title: Errors
+  - id: types
+    title: Types and ownership
+  - id: async
+    title: Async
+  - id: security
+    title: Security
+outro: |
+  ```rust
+  // Wrong: unwrap on external data, clone to escape the borrow checker,
+  // stringly-typed error, index that can panic
+  let body = req.body().unwrap();
+  let account = body.parts.clone()[0].clone();
+  if account.is_empty() {
+      return Err("bad account".to_string());
+  }
+
+  // Right: propagate, borrow, typed error, fallible access
+  let body = req.body().ok_or(ApiError::InvalidRequest)?;
+  let account = body.parts.first().ok_or(Invalid::MissingAccount)?;
+  let account = AccountId::parse(account)?;
+  ```
+rules:
+  - id: ap-unwrap-on-external-data
+    group: errors
+    severity: hard
+    title: Don't unwrap a value that came from outside
+    body: >-
+      Any request, file or environment value can be absent or malformed, so
+      `unwrap` there is a remotely triggerable crash. Use `?` or `ok_or`.
+
+  - id: ap-stringly-typed-errors
+    group: errors
+    severity: hard
+    title: Don't return String or Box<dyn Error> from a library
+    body: >-
+      The caller can only print it. Derive an error enum with `thiserror` so each
+      failure mode is a variant they can match.
+
+  - id: ap-anyhow-in-a-library
+    group: errors
+    severity: soft
+    title: Keep anyhow out of a library's public API
+    body: >-
+      `anyhow::Error` erases the variants a caller needs. Use it in binaries and
+      tests; convert typed errors into it at the boundary.
+
+  - id: ap-swallowing-with-ok
+    group: errors
+    severity: hard
+    title: Don't discard a Result with .ok() or let _
+    body: >-
+      Both throw away the failure silently. If ignoring it is genuinely correct,
+      say why in a comment on the line.
+
+  - id: ap-clone-to-please-the-borrow-checker
+    group: types
+    severity: soft
+    title: Don't clone just to escape a borrow error
+    body: >-
+      A `.clone()` added to make it compile hides the real question of who owns
+      the value. Restructure the borrow; clone when you actually need a second
+      copy.
+
+  - id: ap-string-parameters
+    group: types
+    severity: soft
+    title: Take &str, not String, as a parameter
+    body: >-
+      Requiring `String` forces every caller to allocate. Accept `&str`, `&[T]`
+      or `impl IntoIterator`, and return owned types.
+
+  - id: ap-primitive-obsession
+    group: types
+    severity: soft
+    title: Wrap identifiers in their own type
+    body: >-
+      Two `Uuid` parameters can be passed in the wrong order and still compile.
+      `PaymentId(Uuid)` and `AccountId(Uuid)` cannot.
+
+  - id: ap-bag-of-options
+    group: types
+    severity: soft
+    title: Model states as an enum, not optional fields
+    body: >-
+      Four `Option` fields describe sixteen states, of which perhaps three are
+      legal. An enum with data makes the rest unrepresentable.
+
+  - id: ap-indexing-a-slice
+    group: types
+    severity: hard
+    title: Use get instead of indexing a slice
+    body: >-
+      `v[0]` panics on an empty slice. `v.first()` returns an `Option` and forces
+      the decision at the point where it is cheap.
+
+  - id: ap-refcell-everywhere
+    group: types
+    severity: soft
+    title: Don't reach for Rc<RefCell<T>> to share data
+    body: >-
+      It moves borrow checking to run time, where a mistake is a panic instead of
+      a compile error. It is usually a sign the ownership model needs rethinking.
+
+  - id: ap-blocking-in-async
+    group: async
+    severity: hard
+    title: Don't call blocking code inside async fn
+    body: >-
+      A blocking file read or sync HTTP client stalls the executor thread and
+      every other task on it. Use the async API, or `spawn_blocking`.
+
+  - id: ap-lock-held-across-await
+    group: async
+    severity: hard
+    title: Don't hold a lock guard across an await
+    body: >-
+      The guard is not `Send`, the lock is held for the whole await, and the
+      result is a deadlock under concurrency. Drop it before awaiting.
+
+  - id: ap-detached-task
+    group: async
+    severity: hard
+    title: Don't drop the JoinHandle from spawn
+    body: >-
+      Nobody sees the task's panic or its result, and shutdown will not wait for
+      it. Await the handle, or keep it in a `JoinSet`.
+
+  - id: ap-select-without-cancel-safety
+    group: async
+    severity: soft
+    title: Only put cancel-safe futures in select
+    body: >-
+      `select!` drops the losing future mid-poll, so a partially consumed read
+      loses data. Check the cancel-safety note before using one there.
+
+  - id: ap-format-into-sql
+    group: security
+    severity: hard
+    title: Don't build queries with format!
+    body: >-
+      Use bound parameters or a query builder. Formatting a value into SQL is
+      injection waiting for the right input.
+    source: OWASP C3
+
+  - id: ap-command-through-shell
+    group: security
+    severity: hard
+    title: Don't run a command through sh -c
+    body: >-
+      `Command::new("sh").arg("-c")` lets a semicolon in any value run a second
+      command. Pass the program and its arguments separately.
+    source: OWASP C4
+
+  - id: ap-trusting-client-ids
+    group: security
+    severity: hard
+    title: Don't trust an id sent by the client
+    body: >-
+      Re-check authorisation against the authenticated session on every request.
+      An id in the body proves nothing about who may read that row.
+    source: OWASP C1
+
+  - id: ap-error-debug-to-client
+    group: security
+    severity: hard
+    title: Don't put a Debug-formatted error in a response
+    body: >-
+      `format!("{err:?}")` in a body publishes table names, paths and sometimes
+      values. Return a generic message and log the detail.
+    source: OWASP C3
+
+  - id: ap-integer-overflow-in-release
+    group: security
+    severity: hard
+    title: Use checked arithmetic on external numbers
+    body: >-
+      Overflow panics in debug and wraps silently in release, so a money
+      calculation can quietly become negative. Use `checked_*` or `saturating_*`.
+
+  - id: ap-no-request-timeout
+    group: security
+    severity: soft
+    title: Give every outbound call a timeout
+    body: >-
+      A client built with defaults may wait indefinitely. One slow dependency
+      then exhausts the connection pool and takes the service with it.

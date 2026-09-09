@@ -1,0 +1,36 @@
+contributes_to: core/definition-of-done.md
+section: Python
+
+rules:
+  - id: dod-ruff-clean
+    group: mechanical
+    severity: hard
+    title: ruff check and ruff format report nothing
+    body: >-
+      No new ruff findings and no `# noqa` added to reach that state. The tree is
+      formatted, so the diff is the change and nothing else.
+
+  - id: dod-mypy-strict
+    group: mechanical
+    severity: hard
+    title: mypy passes in strict mode
+    body: >-
+      `mypy --strict src tests` is clean, with no new `# type: ignore`. An
+      unavoidable one names the error code and says why.
+
+  - id: dod-public-api-annotated
+    group: correctness
+    severity: soft
+    title: Exported functions declare their types
+    body: >-
+      Anything importable from the package declares its parameter and return
+      types rather than relying on inference across a module boundary.
+
+  - id: dod-dependency-audit
+    group: security
+    severity: soft
+    title: The dependency audit is clean
+    body: >-
+      `pip-audit` reports no known vulnerability in the locked set, or the
+      exception is recorded with an expiry date.
+    source: OWASP C2

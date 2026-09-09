@@ -1,0 +1,132 @@
+contributes_to: core/guardrails.md
+section: Python
+
+rules:
+  - id: annotate-every-function
+    group: must
+    severity: hard
+    locked: true
+    title: Give every function parameter and return types
+    body: >-
+      `mypy --strict` must pass with no `Any` leaking out of a boundary. An
+      unannotated function is invisible to the type checker and to the next
+      reader.
+
+  - id: validate-at-the-boundary
+    group: must
+    severity: hard
+    title: Parse incoming data before you use it
+    body: >-
+      Anything from the network, disk, environment or user is untrusted until a
+      runtime validator has parsed it. A type annotation on a decoded JSON body
+      is documentation, not a check.
+    source: OWASP C3
+
+  - id: parameterize-queries
+    group: must
+    severity: hard
+    locked: true
+    title: Pass query values as parameters, never as text
+    body: >-
+      Use bound parameters or the ORM's expression API. An f-string in SQL is an
+      injection, whatever the value looks like today.
+    source: OWASP C3
+
+  - id: subprocess-takes-a-list
+    group: must
+    severity: hard
+    title: Call subprocess with a list of arguments
+    body: >-
+      `subprocess.run(["git", "log", ref])` passes the value as one argument. The
+      string form invites the shell to reinterpret it.
+    source: OWASP C4
+
+  - id: close-what-you-open
+    group: must
+    severity: hard
+    title: Open files and connections in a with block
+    body: >-
+      Files, sockets, cursors and locks are released by a context manager, not by
+      the garbage collector. Exhaustion under load is the failure mode.
+
+  - id: pin-and-audit-dependencies
+    group: must
+    severity: soft
+    title: Commit the lock file and audit it
+    body: >-
+      A committed `uv.lock` makes every install reproducible; `pip-audit` in the
+      gate turns a published advisory into a failing build rather than an
+      incident.
+    source: OWASP C2
+
+  - id: no-mutable-default-arguments
+    group: must_not
+    severity: hard
+    locked: true
+    title: Never default an argument to a list or dict
+    body: >-
+      `def f(items=[])` creates one list shared by every call, for the life of the
+      process. Default to `None` and build the value inside.
+
+  - id: no-bare-except
+    group: must_not
+    severity: hard
+    title: Don't catch every exception with a bare except
+    body: >-
+      `except:` also catches `KeyboardInterrupt` and `SystemExit`, and
+      `except Exception` hides the bug you needed to see. Catch what you can
+      actually handle.
+
+  - id: no-eval-or-exec
+    group: must_not
+    severity: hard
+    locked: true
+    title: Never run eval, exec or a shell string
+    body: >-
+      No `eval`, no `exec`, no `subprocess(..., shell=True)` on a value you did
+      not construct. There is always another way, and this one is remote code
+      execution.
+    source: OWASP C4
+
+  - id: no-untrusted-pickle
+    group: must_not
+    severity: hard
+    locked: true
+    title: Never unpickle data from outside the process
+    body: >-
+      Unpickling executes whatever the payload asks for. Use JSON, or a schema
+      format, for anything crossing a process or a network boundary.
+    source: OWASP C5
+
+  - id: no-unsafe-yaml-load
+    group: must_not
+    severity: hard
+    title: Load YAML with safe_load, not load
+    body: >-
+      `yaml.load` without a safe loader can construct arbitrary Python objects.
+      `yaml.safe_load` is the same call without the remote code execution.
+    source: OWASP C5
+
+  - id: no-assert-for-checks
+    group: must_not
+    severity: hard
+    title: Don't enforce a rule with an assert
+    body: >-
+      `python -O` removes every `assert`. Use it for a programmer invariant in a
+      test; raise a real exception for anything a user or a caller can trigger.
+
+  - id: no-import-time-side-effects
+    group: must_not
+    severity: hard
+    title: Importing a module must not start anything
+    body: >-
+      An import must not open a connection, read the environment or spawn a
+      thread. Do that in an explicit function the composition root calls.
+
+  - id: no-star-imports
+    group: must_not
+    severity: soft
+    title: Don't import with a wildcard
+    body: >-
+      `from x import *` makes the origin of a name unknowable and lets a new
+      export in `x` silently shadow a local one.

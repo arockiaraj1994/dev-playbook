@@ -1,0 +1,200 @@
+doc: languages/go/anti-patterns.md
+label: Common mistakes
+merge: by-group
+title: Go anti-patterns - {{project}}
+description: Patterns to avoid when writing Go for {{project}}, and what to do instead.
+tags: [go, anti-patterns]
+intro: |
+  Know these before writing code. Each one is a defect this project has decided
+  not to accept, not a matter of taste.
+groups:
+  - id: errors
+    title: Errors
+  - id: concurrency
+    title: Concurrency
+  - id: design
+    title: Design
+  - id: security
+    title: Security
+outro: |
+  ```go
+  // Wrong: loop variable captured, error dropped, query formatted,
+  // goroutine nobody waits for
+  for _, id := range ids {
+      go func() {
+          row, _ := db.Query(fmt.Sprintf("SELECT * FROM p WHERE id = %s", id))
+          use(row)
+      }()
+  }
+
+  // Right: value passed in, error handled and wrapped, bound parameter,
+  // group that waits and cancels
+  g, ctx := errgroup.WithContext(ctx)
+  for _, id := range ids {
+      g.Go(func() error {
+          row, err := db.QueryContext(ctx, selectPayment, id)
+          if err != nil {
+              return fmt.Errorf("select %s: %w", id, err)
+          }
+          return use(row)
+      })
+  }
+  err := g.Wait()
+  ```
+rules:
+  - id: ap-ignored-error
+    group: errors
+    severity: hard
+    title: Don't assign an error to the blank identifier
+    body: >-
+      `_ = f()` discards the one thing that says the call failed. Handle it, or
+      comment the line with why it cannot fail.
+
+  - id: ap-log-and-return
+    group: errors
+    severity: soft
+    title: Don't log an error and return it too
+    body: >-
+      Handling an error twice puts it in the log twice with no extra information.
+      Log where you stop it; wrap and return everywhere else.
+
+  - id: ap-error-without-context
+    group: errors
+    severity: soft
+    title: Don't return an error unchanged from deep code
+    body: >-
+      A bare `return err` from four layers down arrives as "connection refused"
+      with no clue which call it was. Wrap it with the operation.
+
+  - id: ap-panic-as-error
+    group: errors
+    severity: hard
+    title: Don't panic where you could return an error
+    body: >-
+      A panic in a request handler takes down more than the request, and recovery
+      code hides the bug. Return an error.
+
+  - id: ap-goroutine-without-wait
+    group: concurrency
+    severity: hard
+    title: Don't start a goroutine you never wait for
+    body: >-
+      Its error is invisible and its lifetime is unbounded. Use `errgroup`, a
+      `WaitGroup`, or a channel the caller reads.
+
+  - id: ap-mutex-copied
+    group: concurrency
+    severity: hard
+    title: Don't copy a struct that holds a mutex
+    body: >-
+      Copying the value copies the lock, so two copies guard nothing. Use a
+      pointer receiver, and let `go vet` tell you when you slipped.
+
+  - id: ap-sleep-to-synchronise
+    group: concurrency
+    severity: hard
+    title: Don't use time.Sleep to wait for a goroutine
+    body: >-
+      A sleep is a race with a timer attached - flaky in CI, wrong under load.
+      Wait on a channel, a `WaitGroup` or a context.
+
+  - id: ap-unbuffered-fire-and-forget
+    group: concurrency
+    severity: soft
+    title: Don't send on a channel nobody will read
+    body: >-
+      A send with no receiver blocks its goroutine forever. Decide who reads, and
+      close from the owner.
+
+  - id: ap-interface-beside-implementation
+    group: design
+    severity: soft
+    title: Don't define an interface next to its only implementation
+    body: >-
+      A one-implementation interface exported from the producer is indirection
+      without a purpose. Declare it in the package that consumes it.
+
+  - id: ap-getters-and-setters
+    group: design
+    severity: soft
+    title: Don't write GetX and SetX for a plain field
+    body: >-
+      Go exports the field. Add a method when it does something - validate,
+      derive, guard - not to satisfy a convention from another language.
+
+  - id: ap-util-package
+    group: design
+    severity: soft
+    title: Don't create a package called util or common
+    body: >-
+      A name that describes nothing attracts everything, and every package ends
+      up importing it. Put the function next to the type it serves.
+
+  - id: ap-empty-interface
+    group: design
+    severity: soft
+    title: Don't pass values around as any
+    body: >-
+      `any` moves the failure from compile time to a type assertion at run time.
+      Use a concrete type or a small interface, or generics where it is genuinely
+      generic.
+
+  - id: ap-slice-aliasing
+    group: design
+    severity: hard
+    title: Don't return a slice that shares your backing array
+    body: >-
+      `s[:2]` handed to a caller still points at your memory, so their append can
+      overwrite your data. Copy when the caller keeps it.
+
+  - id: ap-sql-sprintf
+    group: security
+    severity: hard
+    title: Don't build queries with fmt.Sprintf
+    body: >-
+      Use placeholders and pass values as arguments to `QueryContext`. Formatting
+      into SQL is injection waiting for the right input.
+    source: OWASP C3
+
+  - id: ap-exec-with-shell
+    group: security
+    severity: hard
+    title: Don't run a command through sh -c
+    body: >-
+      `exec.Command("sh", "-c", input)` lets a semicolon run a second command.
+      Pass the program and its arguments separately.
+    source: OWASP C4
+
+  - id: ap-trusting-client-ids
+    group: security
+    severity: hard
+    title: Don't trust an id sent by the client
+    body: >-
+      Re-check authorisation against the authenticated session on every request.
+      An id in the body proves nothing about who may read that row.
+    source: OWASP C1
+
+  - id: ap-error-to-the-client
+    group: security
+    severity: hard
+    title: Don't write the error chain into the response
+    body: >-
+      `http.Error(w, err.Error(), 500)` publishes your table names and file paths.
+      Return a generic message and log the detail.
+    source: OWASP C3
+
+  - id: ap-no-server-timeouts
+    group: security
+    severity: hard
+    title: Set read and write timeouts on every server
+    body: >-
+      `http.ListenAndServe` with a zero-value `Server` has no timeouts at all, so
+      one slow client can hold a connection indefinitely.
+
+  - id: ap-default-http-client
+    group: security
+    severity: soft
+    title: Don't use http.DefaultClient for outbound calls
+    body: >-
+      It has no timeout and is shared process-wide. Build a client with an
+      explicit timeout and transport.

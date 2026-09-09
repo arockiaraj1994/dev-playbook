@@ -18,11 +18,16 @@ from standards_scanner import REQUIRED_FILES, REQUIRED_WORKFLOWS, scan_project
 from standards_store import ProjectExists, StandardsStore
 from templates_store import TemplateError, base_pack, compose, load_packs, substitute
 
-LANGUAGE_IDS = ["java", "kotlin", "typescript"]
+LANGUAGE_IDS = ["go", "java", "kotlin", "python", "rust", "typescript"]
 
 # Every language pack that declares a placeholder needs a value here. A new
 # placeholder makes these tests fail, which is the intended nudge.
-PLACEHOLDERS = {"package": "com.example.demo"}
+PLACEHOLDERS = {
+    "package": "com.example.demo",
+    "python_package": "demo_app",
+    "module": "github.com/example/demo",
+    "crate": "demo_app",
+}
 
 COMBINATIONS = [
     list(combo)

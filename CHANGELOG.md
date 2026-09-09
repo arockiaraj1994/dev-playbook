@@ -8,6 +8,29 @@ changes after 1.0.0 will bump the **major**.
 
 ## [Unreleased]
 
+### Added - Python, Go and Rust template packs
+- **Three new language packs** under `mcp/templates/languages/`, authored
+  against `mcp/templates/TEMPLATE_SPEC.md` and matching the breadth of the
+  existing java/kotlin/typescript packs (standards, testing, two patterns,
+  anti-patterns, and contributions into guardrails / definition-of-done /
+  architecture, plus a gate script):
+  - **python** (3.12) - ruff + `mypy --strict`, `src/` layout and PEP 621,
+    pytest, and the Bandit/OWASP vulnerability classes (`pickle`,
+    `yaml.load`, `shell=True`, `eval`/`exec`, f-string SQL). Placeholder:
+    `python_package`. Gate: format → lint → types → tests.
+  - **go** (1.23) - Effective Go and the Google Go Style Guide,
+    consumer-defined interfaces, `%w` error wrapping, table-driven tests.
+    Placeholder: `module`. Gate: gofmt → vet → staticcheck → `test -race` →
+    govulncheck.
+  - **rust** (1.85) - Rust API Guidelines, `clippy::pedantic`,
+    `thiserror`/`anyhow`, `#![forbid(unsafe_code)]`, async cancellation and
+    lock-across-await rules. Placeholder: `crate`. Gate: fmt → clippy → test
+    → doc → cargo-deny.
+- The wizard's template-values step now carries a per-placeholder example
+  (`python_package`, `module`, `crate` alongside `package`).
+- Tests: `LANGUAGE_IDS` grows to six languages, so the combination matrix
+  covers all 63 selections rather than 7; 242 → 522 tests.
+
 ### Added - dashboard standards module (post-v1.0.0)
 - **Rebuilt the Standards/Projects dashboard page** as a lightweight,
   self-contained module: `mcp/standards_scanner.py` reads `standards/`

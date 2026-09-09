@@ -1,0 +1,12 @@
+id: rust
+kind: language
+title: Rust
+language: rust
+language_version: "1.85"
+template_version: "1.0.0"
+gate: gates/scripts/verify-rust.sh
+description: >-
+  Framework-neutral Rust standards drawn from the Rust API Guidelines, clippy's
+  pedantic lints, and the OWASP Top 10 Proactive Controls.
+placeholders:
+  - crate

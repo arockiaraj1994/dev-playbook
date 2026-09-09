@@ -1,0 +1,223 @@
+doc: languages/python/anti-patterns.md
+label: Common mistakes
+merge: by-group
+title: Python anti-patterns - {{project}}
+description: Patterns to avoid when writing Python for {{project}}, and what to do instead.
+tags: [python, anti-patterns]
+intro: |
+  Know these before writing code. Each one is a defect this project has decided
+  not to accept, not a matter of taste.
+groups:
+  - id: typing
+    title: Typing
+  - id: structure
+    title: Structure
+  - id: async
+    title: Async
+  - id: errors
+    title: Errors
+  - id: security
+    title: Security
+outro: |
+  ```python
+  # Wrong: mutable default, cast instead of validation, swallowed error,
+  # query built by formatting
+  def load(ids=[]):
+      user = cast(User, requests.get(url).json())
+      try:
+          db.execute(f"SELECT * FROM users WHERE id = {user.id}")
+      except Exception:
+          pass
+
+  # Right: no shared default, parsed at the boundary, bound parameter,
+  # narrow except with context
+  def load(ids: list[int] | None = None) -> list[Row]:
+      user = User.model_validate(requests.get(url, timeout=5).json())
+      try:
+          return db.execute(SELECT_USER, {"id": user.id}).fetchall()
+      except DatabaseError as err:
+          raise UserLookupFailed(user.id) from err
+  ```
+rules:
+  - id: ap-cast-as-validation
+    group: typing
+    severity: hard
+    title: Don't use cast in place of real validation
+    body: >-
+      `cast(User, payload)` tells mypy to stop checking; it does not make the
+      value a `User`. Parse with a runtime validator at the boundary.
+
+  - id: ap-any-everywhere
+    group: typing
+    severity: soft
+    title: Don't annotate with Any to silence mypy
+    body: >-
+      `Any` disables checking for every expression it touches. Use `object` and
+      narrow, a `Protocol`, or a `TypedDict` for a known dict shape.
+
+  - id: ap-dict-as-a-record
+    group: typing
+    severity: soft
+    title: Don't pass a dict where a type belongs
+    body: >-
+      `dict[str, Any]` moving between layers means every reader guesses the keys.
+      A frozen dataclass names the fields once and fails at the boundary instead
+      of three calls later.
+
+  - id: ap-boolean-blindness
+    group: typing
+    severity: soft
+    title: Use an enum instead of several booleans
+    body: >-
+      Two booleans encode four states, of which perhaps two are legal. An `Enum`
+      or a `Literal` union makes the illegal ones unrepresentable.
+
+  - id: ap-optional-then-assert
+    group: typing
+    severity: soft
+    title: Don't answer an Optional with an assert
+    body: >-
+      `assert x is not None` to appease the checker restates the problem. Narrow
+      with a real check that raises, or make the type honest about absence.
+
+  - id: ap-god-utils-module
+    group: structure
+    severity: soft
+    title: Don't collect unrelated helpers in utils.py
+    body: >-
+      Unrelated functions in one module couple everything that imports it. Put
+      the function next to the type it serves.
+
+  - id: ap-mutating-arguments
+    group: structure
+    severity: hard
+    title: Don't modify a list or dict passed in
+    body: >-
+      Callers do not expect their object to change. Return a new value, and take
+      a `Sequence` or `Mapping` when you only need to read.
+
+  - id: ap-class-with-one-method
+    group: structure
+    severity: soft
+    title: Don't wrap a single function in a class
+    body: >-
+      A class whose only members are `__init__` and one method is a function with
+      extra ceremony. Keep the class when it holds injected dependencies.
+
+  - id: ap-inheritance-for-reuse
+    group: structure
+    severity: soft
+    title: Compose behaviour instead of subclassing for it
+    body: >-
+      Subclassing to borrow a method couples the two forever. Inherit to be
+      substitutable; compose to reuse.
+
+  - id: ap-blocking-call-in-async
+    group: async
+    severity: hard
+    title: Don't make a blocking call inside async def
+    body: >-
+      `requests.get`, `time.sleep` or a sync driver in a coroutine stalls the
+      whole event loop. Use the async client, or `asyncio.to_thread`.
+
+  - id: ap-fire-and-forget-task
+    group: async
+    severity: hard
+    title: Don't drop the result of create_task
+    body: >-
+      A task nobody holds can be garbage collected mid-flight, and its exception
+      is never seen. Await it, or run it inside a `TaskGroup`.
+
+  - id: ap-await-in-loop
+    group: async
+    severity: soft
+    title: Don't await one at a time when work is independent
+    body: >-
+      Awaiting inside a loop serialises independent work. Use a `TaskGroup` or
+      `asyncio.gather` when the iterations do not depend on each other - and keep
+      the loop when they do.
+
+  - id: ap-swallowing-cancellation
+    group: async
+    severity: hard
+    title: Never catch CancelledError and carry on
+    body: >-
+      Cancellation is how shutdown and timeouts work. Catch it only to clean up,
+      then re-raise.
+
+  - id: ap-catch-and-continue
+    group: errors
+    severity: hard
+    title: Never leave an except block empty
+    body: >-
+      `except Exception: pass` hides the failure and produces wrong results
+      later. Handle it, wrap it with context, or let it propagate.
+
+  - id: ap-losing-the-cause
+    group: errors
+    severity: soft
+    title: Keep the original error when re-raising
+    body: >-
+      `raise MyError(...) from err` keeps the traceback that explains what
+      actually happened. Without it the report starts at the wrapper.
+
+  - id: ap-exception-as-control-flow
+    group: errors
+    severity: soft
+    title: Don't use exceptions for an expected outcome
+    body: >-
+      A declined payment is a result, not an exception. Return a value for what
+      you expect; raise for what you did not.
+
+  - id: ap-string-formatted-queries
+    group: security
+    severity: hard
+    title: Don't build queries with f-strings
+    body: >-
+      Use bound parameters or the ORM's expression API. Formatting a value into
+      SQL is injection waiting for the right input.
+    source: OWASP C3
+
+  - id: ap-shell-true
+    group: security
+    severity: hard
+    title: Don't pass shell=True to subprocess
+    body: >-
+      With `shell=True` a semicolon in any interpolated value runs a second
+      command. Pass an argument list instead.
+    source: OWASP C4
+
+  - id: ap-trusting-client-ids
+    group: security
+    severity: hard
+    title: Don't trust an id sent by the client
+    body: >-
+      Re-check authorisation against the authenticated session on every request.
+      An id in the body proves nothing about who may read that row.
+    source: OWASP C1
+
+  - id: ap-leaking-errors-to-client
+    group: security
+    severity: hard
+    title: Don't return raw errors to callers
+    body: >-
+      Return a stable, generic error and keep the detail in the log. A traceback
+      in a response discloses internals to anyone who can trigger a failure.
+    source: OWASP C3
+
+  - id: ap-logging-secrets
+    group: security
+    severity: hard
+    title: Don't log tokens, passwords or full payloads
+    body: >-
+      Logs are copied, shipped and retained far longer than the data policy
+      expects. Log identifiers, not the request body.
+    source: OWASP C9
+
+  - id: ap-requests-without-timeout
+    group: security
+    severity: soft
+    title: Give every outbound call a timeout
+    body: >-
+      `requests.get(url)` waits forever by default. One slow dependency then
+      exhausts the pool and takes the service with it.
