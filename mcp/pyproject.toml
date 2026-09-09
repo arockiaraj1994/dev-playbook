@@ -1,6 +1,6 @@
 [project]
 name = "dev-playbook"
-version = "1.0.0"
+version = "1.1.0"
 description = "MCP server skeleton - SSE transport, local auth, usage dashboard"
 requires-python = ">=3.12"
 dependencies = [

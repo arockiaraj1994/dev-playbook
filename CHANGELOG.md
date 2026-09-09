@@ -8,6 +8,64 @@ changes after 1.0.0 will bump the **major**.
 
 ## [Unreleased]
 
+### Added - v1.1.0 - the MCP tool surface is back, scaffolding-first
+
+- **Five `playbook_*` tools.** `list_tools()` has returned `[]` since v1.0.0;
+  it now advertises `playbook_start_task`, `playbook_get_standard`,
+  `playbook_find_standards`, `playbook_list_templates` and
+  `playbook_scaffold_standards`. Naming is `<verb>_<resource>` behind the
+  `playbook_` namespace.
+- **`playbook_scaffold_standards` is the headline.** An agent in a repo with no
+  standards can generate a full set from the template packs. It contains no
+  scaffolding logic of its own - it calls `scaffold_service.py`, the same
+  function the dashboard wizard calls, and a test diffs the two resulting
+  stores to prove they cannot drift.
+- **`playbook_list_templates` is split out of it deliberately.** The pack
+  catalog is discovery data; folding it into the scaffold tool's description
+  would spend those tokens in every conversation. As its own tool it is a
+  round-trip paid only when something actually needs bootstrapping.
+- **`dry_run=true`** renders the manifest and writes nothing, so an agent can
+  show the user what it would create before it creates it.
+- **Every tool declares MCP annotations** (`readOnlyHint`, `destructiveHint`,
+  `idempotentHint`, `openWorldHint`). Scaffolding is additive but not
+  idempotent, so a client confirms before calling it. A client that sees no
+  annotations is entitled to assume the worst, so none go out bare.
+- **Every error carries a next move.** An unknown language lists the valid ids;
+  a missing placeholder says where in the codebase to find it; an unresolvable
+  ref lists the project's actual documents; scaffolding over an existing
+  project says the store never merges and points at the read tools.
+- **`mcp/tools/` module layout.** One module per tool, each exporting
+  `DEFINITIONS` + `dispatch`; `server.py` concatenates and routes them. New
+  `tools/refs.py` holds the ref grammar and `tools/common.py` the shared
+  annotations, argument coercion and Next Calls renderer.
+
+### Changed - v1.1.0
+
+- **The `ref` grammar is the relative path**, plus aliases (`guardrails`,
+  `workflow:bug-fix`, `gate:...`). The v0.8.0 grammar (`pattern:x`,
+  `language:kotlin/testing`) addressed a filesystem corpus that no longer
+  exists; storage is `standards_files(project, relative_path)`. A test asserts
+  every ref the tools print resolves back to the row it names.
+- **`playbook_start_task` composes `get.render_ref`** for its guardrails and
+  workflow bodies, with a byte-identity test. Issue #380 found this exact
+  duplication had crept back twice, because earlier passes merged tool *names*
+  without merging their *renderers*.
+- **`find` scores in Python** over `store.list_files()`. BM25 went with the
+  v1.0.0 cut and a project is ~25 documents; FTS5 is the escalation if corpora
+  grow, not now.
+- **`metrics._LEGACY_TOOL_MAP` retargeted** onto the new names, and the v0.8/0.9
+  three (`playbook_start` / `_get` / `_find`) added as sources. Recorded calls
+  are history and must not be orphaned, so the map only ever grows.
+- **`[enable] scaffold`** (default true) in `config.toml`. False hides the write
+  tool and refuses it; the read tools are unaffected. With auth enabled,
+  scaffolding also requires an admin token - with auth disabled every principal
+  is `role="user"`, so an unconditional admin gate would lock the tool out of
+  the default local config entirely.
+- Dashboard setup page's "verify it works" steps now describe the real flow.
+- README rewritten around the surface; it had described a tool-less skeleton and
+  claimed 112 tests. `docker-compose.yml` image tag corrected from `0.8.0`.
+- Tests: 522 → 601.
+
 ### Added - Python, Go and Rust template packs
 - **Three new language packs** under `mcp/templates/languages/`, authored
   against `mcp/templates/TEMPLATE_SPEC.md` and matching the breadth of the

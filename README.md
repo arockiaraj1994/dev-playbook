@@ -1,34 +1,53 @@
 # dev-playbook
 
-An MCP server skeleton: SSE transport, local auth with issuable bearer tokens,
-a browser dashboard, and per-call usage telemetry.
+Your team's coding standards, served to coding agents over MCP - and
+bootstrapped by them. An agent sitting in a repo with no standards can generate
+a full set from the language template packs, then read them back on every task.
 
-> **v1.0.0 removed the standards feature from MCP.** This repo used to serve a
-> corpus of team rule docs over MCP (`playbook_start` / `playbook_get` /
-> `playbook_find`) with a BM25 index and a doc validator. The BM25 index,
-> loader, search, validator, quality rules and the three tools have been
-> deleted. What remains is the server infrastructure those tools were built
-> on, so a new tool surface can be built on it.
->
-> **The MCP server currently advertises no tools.** It connects, authenticates
-> and records calls, but `tools/list` returns an empty list.
->
-> **The dashboard's Standards page reads its corpus from SQLite**, not the
-> filesystem. `mcp/standards_store.py` is the DAL (`standards_projects` /
-> `standards_files` tables in the same `metrics.db`); `mcp/standards_scanner.py`
-> runs the same validation rules as before against store rows instead of
-> files. Admins can create, edit, and delete docs live from the dashboard - a
-> four-tab file viewer (Formatted / Source / Code / Edit) per file. Initial
-> content ships as `mcp/data/standards_seed.json` and loads into the DB on
-> first boot. It has no dependency on the deleted corpus/loader and doesn't
-> back any MCP tool.
->
-> The last version with the full playbook surface is tagged in git history at
-> commit `92c00d2` (v0.9.0).
+Ships an SSE MCP server with local auth and issuable bearer tokens, a browser
+dashboard for authoring and telemetry, and a SQLite store both share.
+
+## The tool surface
+
+| Tool | Does | Writes |
+|---|---|---|
+| `playbook_start_task(project, intent)` | The entry point. Returns the guardrails plus the workflow matching what you are about to do, and the refs to read next. | no |
+| `playbook_get_standard(project, ref)` | Reads one document. `ref` is a path (`core/guardrails.md`) or shorthand (`guardrails`, `workflow:bug-fix`). | no |
+| `playbook_find_standards(project, query?, type?, top_k?)` | Searches a project's standards, or lists them all when given no query. | no |
+| `playbook_list_templates(language?)` | The language pack catalog: rule counts, required placeholders, per-pack detail. | no |
+| `playbook_scaffold_standards(project, languages[], ...)` | Creates a standards project from base + language packs. Run with `dry_run=true` first. | **yes** |
+
+Every tool declares its MCP annotations, so a client knows which one to confirm
+before calling. `playbook_scaffold_standards` is additive but not idempotent -
+it creates projects and never merges into one.
+
+### Bootstrapping a repo that has no standards
+
+```
+playbook_list_templates()                       # which languages are available
+playbook_scaffold_standards(project="billing", languages=["java"],
+    placeholders={"package": "com.acme.billing"}, dry_run=true)
+                                                # manifest; nothing written
+playbook_scaffold_standards(..., dry_run=false) # write it
+playbook_start_task(project="billing", intent="add pagination to /orders")
+```
+
+The tool and the dashboard's creation wizard both call `mcp/scaffold_service.py`,
+so the two paths apply identical rules - a test diffs the resulting stores to
+keep it that way.
+
+### Authoring from the browser
+
+The dashboard's Standards page reads the same SQLite store
+(`standards_projects` / `standards_files` in `metrics.db`).
+`mcp/standards_scanner.py` scores corpus health against store rows. Admins
+create projects through a six-step wizard, and edit any document in a four-tab
+viewer (Formatted / Source / Code / Edit). Initial content ships as
+`mcp/data/standards_seed.json` and loads on first boot.
 
 ---
 
-## What is still here
+## What is here
 
 | Piece | File | Does |
 |---|---|---|
@@ -39,6 +58,11 @@ a browser dashboard, and per-call usage telemetry.
 | Dashboard | `mcp/dashboard/` | Users, tools, searches, activity, setup, tokens, user admin, standards |
 | Standards store | `mcp/standards_store.py` | SQLite DAL for the standards corpus (CRUD, optimistic concurrency, seed/dump) |
 | Standards scanner | `mcp/standards_scanner.py` | Runs validation rules against store rows for the dashboard's corpus-health pages |
+| Tool surface | `mcp/tools/` | One module per tool, each exporting `DEFINITIONS` + `dispatch`; `server.py` concatenates and routes them |
+| Ref grammar | `mcp/tools/refs.py` | How a tool call addresses one document; shared by the tools and the Next Calls renderer |
+| Template packs | `mcp/templates/` | The base pack plus one per language; format contract in `TEMPLATE_SPEC.md` |
+| Template loader | `mcp/templates_source.py`, `mcp/templates_store.py` | Finds packs on disk, then loads, validates and composes them into documents |
+| Scaffolding | `mcp/scaffold_service.py` | The single entry point both the MCP tool and the dashboard wizard call |
 
 ## Run it
 
@@ -96,22 +120,31 @@ curl -s -X POST http://localhost:3001/auth/login \
 | `MCP_ADMIN_USER` | `admin` | Default admin username (seeded on first boot). |
 | `MCP_ADMIN_PASSWORD` | `admin` | Default admin password. **Required** (non-default) when `MCP_HOST=0.0.0.0`. |
 | `MCP_STANDARDS_SEED` | `mcp/data/standards_seed.json` | JSON seed file loaded into the standards tables on first boot (only when they're empty). |
+| `MCP_TEMPLATE_CACHE` | `~/.cache/dev-playbook-templates` | Extra template pack search path, searched before the bundled `mcp/templates/`. |
+
+`config.toml` carries two switches: `[enable] auth` (default false) and
+`[enable] scaffold` (default true). With `scaffold = false` the write tool is
+neither advertised nor callable and the read tools are unaffected. With auth
+enabled, scaffolding additionally requires an admin token; with auth disabled
+there are no roles to check, so the local operator may scaffold.
 
 Auth is entirely local: create users in `/dashboard/users-admin`, issue MCP
 tokens in `/dashboard/tokens`, and authenticate clients with
 `Authorization: Bearer <token>`.
 
-## Adding a tool surface
+## Adding a tool
 
-Register tools on the `Server` instance in `mcp/server.py`. `list_tools()`
-returns `[]` today; `_dispatch_typed()` is the single dispatch point and already
-records status, latency and per-call context into metrics.
+Add a module under `mcp/tools/` exporting `DEFINITIONS: list[Tool]` and an async
+`dispatch(name, arguments, ctx, store)` that returns `None` for names it does not
+own, then list it in `_TOOL_MODULES` in `mcp/server.py`. Dispatch, timing and
+per-call telemetry are already wired around it. Annotate every tool: a client
+that sees no annotations is entitled to assume the worst.
 
 ## Development
 
 ```bash
 cd mcp
-uv run pytest                  # 112 tests
+uv run pytest                  # 601 tests
 uv run ruff check .
 uv run ruff format --check .
 ```
