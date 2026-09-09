@@ -1,0 +1,126 @@
+doc: core/guardrails.md
+label: Everyday rules
+merge: by-group
+title: Guardrails - {{project}}
+description: Always-on MUST / MUST NOT rules for {{project}}. Re-read before every task.
+tags: [guardrails, security]
+intro: |
+  These rules are non-negotiable. Re-read them at the start of every task and
+  again before claiming done.
+groups:
+  - id: must
+    title: MUST
+  - id: must_not
+    title: MUST NOT
+outro: |
+  Module boundaries and dependency direction live in `ARCHITECTURE.md`.
+  Git and review practice lives in `core/git.md`.
+  See `core/definition-of-done.md` for the completion checklist.
+rules:
+  - id: scope-only-what-is-asked
+    group: must
+    severity: hard
+    locked: true
+    title: Change only what was asked
+    body: One task, one change. No incidental refactors or "while I'm here" cleanups.
+
+  - id: read-before-write
+    group: must
+    severity: hard
+    locked: true
+    title: Read the file before you edit it
+    body: >-
+      Inspect the existing file before editing it. Match the prevailing naming,
+      layout and patterns rather than introducing a second style.
+
+  - id: ask-dont-guess
+    group: must
+    severity: hard
+    title: Ask when the requirements are unclear
+    body: >-
+      If requirements are ambiguous - especially around data shape, public API
+      or migration - ask before writing code.
+
+  - id: honesty-over-agreement
+    group: must
+    severity: hard
+    title: Say so when an approach is wrong
+    body: >-
+      Do not affirm an incorrect assumption. If an approach is flawed, say so and
+      offer the better one. If you do not know, say so.
+
+  - id: validate-external-input
+    group: must
+    severity: hard
+    locked: true
+    title: Check every value that comes from outside
+    body: >-
+      Every value crossing a trust boundary is validated before use and rejected
+      with a clear error rather than coerced silently.
+    source: OWASP C3
+
+  - id: parameterized-queries
+    group: must
+    severity: hard
+    locked: true
+    title: Use bound parameters in every database query
+    body: >-
+      String concatenation or interpolation into a query is never acceptable,
+      including in tests and migrations - use the driver's binding API.
+    source: OWASP C3
+
+  - id: fail-closed
+    group: must
+    severity: hard
+    title: If a permission check errors, deny access
+    body: >-
+      On error, deny rather than allow. An authorization check that throws must
+      not fall through to permitting the operation.
+    source: OWASP C1
+
+  - id: keep-dependencies-current
+    group: must
+    severity: soft
+    title: Keep dependencies current and minimal
+    body: >-
+      Pin versions in one place and update them deliberately. Do not add a
+      dependency for something the standard library already covers.
+    source: OWASP C6
+
+  - id: no-hardcoded-secrets
+    group: must_not
+    severity: hard
+    locked: true
+    title: No hardcoded secrets
+    body: >-
+      API keys, tokens, passwords and connection strings must never appear in
+      source, tests or committed configuration. Read them from the environment
+      or a secret manager.
+    source: OWASP C2
+
+  - id: no-pii-in-logs
+    group: must_not
+    severity: hard
+    locked: true
+    title: No sensitive data in logs
+    body: >-
+      Never log credentials, tokens, personal data or full request bodies. Log
+      identifiers and outcomes instead.
+    source: OWASP C9
+
+  - id: no-verbose-errors-to-callers
+    group: must_not
+    severity: hard
+    title: Don't return internal details in error messages
+    body: >-
+      Return a stable, generic error and keep the detail in the log. Stack traces
+      disclose internals to anyone who can trigger a failure.
+    source: OWASP C3
+
+  - id: no-unreviewed-generated-code
+    group: must_not
+    severity: soft
+    title: No unreviewed generated code
+    body: >-
+      Generated or copied code is your responsibility once committed. Read it,
+      understand it, and check its licence before it lands.

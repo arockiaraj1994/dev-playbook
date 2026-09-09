@@ -1,0 +1,12 @@
+id: java
+kind: language
+title: Java
+language: java
+language_version: "21"
+template_version: "1.0.0"
+gate: gates/scripts/verify-java.sh
+description: >-
+  Framework-neutral Java standards drawn from the Google Java Style Guide,
+  Effective Java practice, and the OWASP Top 10 Proactive Controls.
+placeholders:
+  - package

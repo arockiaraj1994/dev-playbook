@@ -1,0 +1,83 @@
+contributes_to: core/guardrails.md
+section: TypeScript
+
+rules:
+  - id: strict-mode-on
+    group: must
+    severity: hard
+    locked: true
+    title: Leave strict compiler settings switched on
+    body: >-
+      `strict` and `noUncheckedIndexedAccess` are enabled and must not be
+      weakened for a single file or a single change.
+
+  - id: unknown-at-boundaries
+    group: must
+    severity: hard
+    title: Type incoming data as unknown, then check it
+    body: >-
+      Anything from the network, disk, environment or user is `unknown`
+      until a schema validator has narrowed it. A type assertion is not
+      validation.
+    source: OWASP C3
+
+  - id: handle-promise-rejections
+    group: must
+    severity: hard
+    title: Every promise is awaited or handled
+    body: >-
+      A floating promise loses its error. Await it, return it, or attach an
+      explicit handler.
+
+  - id: no-any
+    group: must_not
+    severity: hard
+    locked: true
+    title: Never use the any type
+    body: >-
+      Use `unknown` and narrow, or write the real type. An `any` disables
+      checking for every expression it touches, silently and transitively.
+
+  - id: no-non-null-assertion
+    group: must_not
+    severity: hard
+    title: Never use the ! non-null assertion
+    body: >-
+      `!` asserts something the compiler cannot see and you cannot prove.
+      Narrow with a check, or make the type honest about absence.
+
+  - id: no-ts-ignore
+    group: must_not
+    severity: hard
+    title: Don't silence errors with @ts-ignore
+    body: >-
+      Fix the type error. If a suppression is genuinely unavoidable, use
+      `@ts-expect-error` with a comment, so it fails once the underlying
+      issue is fixed.
+
+  - id: no-eval
+    group: must_not
+    severity: hard
+    locked: true
+    title: Never use eval or new Function
+    body: >-
+      No `eval`, no `new Function`, no passing a string to `setTimeout`.
+      There is always another way, and this one is an injection vector.
+    source: OWASP C3
+
+  - id: no-default-exports
+    group: must_not
+    severity: soft
+    title: Use named exports, not default exports
+    body: >-
+      Named exports keep the name stable across the codebase, make imports
+      greppable, and let tooling rename safely.
+
+  - id: no-enum
+    group: must_not
+    severity: soft
+    title: Use a string union instead of enum
+    body: >-
+      Prefer a union of string literals or an `as const` object. `enum`
+      emits runtime code and behaves inconsistently between numeric and
+      string forms.

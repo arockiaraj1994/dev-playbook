@@ -193,7 +193,7 @@
       <div class="legend">
         <span class="legend-item"><span class="legend-dot" style="background:var(--chart-cat-search)"></span>search</span>
         <span class="legend-item"><span class="legend-dot" style="background:var(--chart-cat-get)"></span>get</span>
-        <span class="legend-item"><span class="legend-dot" style="background:var(--chart-cat-list)"></span>list</span>
+        <span class="legend-item"><span class="legend-dot" style="background:var(--chart-cat-start)"></span>start</span>
       </div>
     </div>
     <div class="panel-body">
@@ -528,8 +528,8 @@ var WINDOW = "{{ window }}";
       { key: 'err', stroke: 'var(--chart-err)', fill: 'var(--chart-err-fill)' }
     ], 180);
     drawStackedBars('chart-daily', DAILY,
-      ['list', 'get', 'search'],
-      ['var(--chart-cat-list)', 'var(--chart-cat-get)', 'var(--chart-cat-search)'],
+      ['start', 'get', 'search'],
+      ['var(--chart-cat-start)', 'var(--chart-cat-get)', 'var(--chart-cat-search)'],
       120);
     drawSparkline('spark-calls', HOURLY);
   }

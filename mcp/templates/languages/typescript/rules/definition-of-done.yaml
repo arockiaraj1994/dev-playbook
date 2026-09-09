@@ -1,0 +1,18 @@
+contributes_to: core/definition-of-done.md
+section: TypeScript
+
+rules:
+  - id: dod-lint
+    group: mechanical
+    severity: hard
+    title: eslint reports nothing new
+    body: >-
+      No new eslint findings, and no rule disabled inline to get there.
+
+  - id: dod-public-api-typed
+    group: correctness
+    severity: soft
+    title: Exported functions declare their types
+    body: >-
+      Exported functions declare their parameter and return types rather
+      than relying on inference across a module boundary.

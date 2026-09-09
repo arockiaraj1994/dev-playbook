@@ -1,0 +1,83 @@
+contributes_to: core/guardrails.md
+section: Kotlin
+
+rules:
+  - id: prefer-val
+    group: must
+    severity: hard
+    title: Use val unless the value has to change
+    body: >-
+      Declare `val` unless mutation is genuinely required, and expose read-
+      only collection types. Immutability removes whole categories of
+      concurrency bug.
+
+  - id: model-absence-in-types
+    group: must
+    severity: hard
+    locked: true
+    title: Let the type say when a value can be missing
+    body: >-
+      Let the type system carry optionality and handle it with `?.`, `?:` or
+      an explicit check. Nullability is information, not an inconvenience.
+
+  - id: structured-concurrency
+    group: must
+    severity: hard
+    locked: true
+    title: Launch coroutines in a scope that can cancel them
+    body: >-
+      Every coroutine is launched in a scope with a defined lifetime, so it
+      is cancelled with its parent and its failures surface.
+
+  - id: inject-dispatchers
+    group: must
+    severity: hard
+    title: Pass the dispatcher in so tests can replace it
+    body: >-
+      Pass `CoroutineDispatcher` in rather than hardcoding `Dispatchers.IO`
+      at the call site, so tests can substitute a deterministic one.
+
+  - id: no-not-null-assertion
+    group: must_not
+    severity: hard
+    locked: true
+    title: Never use the !! operator
+    body: >-
+      The not-null assertion converts a type error into a runtime crash.
+      Narrow with a check, use `requireNotNull` with a message, or fix the
+      type.
+
+  - id: no-globalscope
+    group: must_not
+    severity: hard
+    locked: true
+    title: Never use GlobalScope
+    body: >-
+      A coroutine in `GlobalScope` outlives its caller, ignores cancellation
+      and leaks. Use a scope tied to the work's lifetime.
+
+  - id: no-runblocking-in-production
+    group: must_not
+    severity: hard
+    title: Don't use runBlocking in production code
+    body: >-
+      It blocks the calling thread and can deadlock. It belongs in tests and
+      in `main`, nowhere else.
+
+  - id: no-swallowed-exceptions
+    group: must_not
+    severity: hard
+    title: Never leave a catch block empty
+    body: >-
+      An empty `catch` is a defect. Handle it, wrap it with context, or let
+      it propagate - and never catch `CancellationException` without
+      rethrowing it.
+
+  - id: no-platform-type-leaks
+    group: must_not
+    severity: soft
+    title: Convert Java values to real Kotlin types at the edge
+    body: >-
+      Values from Java interop arrive as platform types with no null
+      guarantee. Annotate or assert them into a real Kotlin type at the
+      boundary.

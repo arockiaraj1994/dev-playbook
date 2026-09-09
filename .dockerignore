@@ -1,0 +1,15 @@
+.git
+.github
+**/.venv
+**/__pycache__
+**/*.py[cod]
+**/.pytest_cache
+**/.ruff_cache
+**/.mypy_cache
+mcp/data
+mcp/tests
+docs/screenshots
+.env
+*.md
+!standards/**/*.md
+!requirements/**/*.md

@@ -1,0 +1,63 @@
+# dev-playbook - MCP rule server + dashboard.
+#
+#   cp .env.example .env      # set MCP_ADMIN_PASSWORD, then:
+#   docker compose up -d
+#
+# Dashboard:  http://localhost:${MCP_PORT:-3001}/dashboard/
+# MCP (SSE):  http://localhost:${MCP_PORT:-3001}/sse
+#
+# Host port defaults to 3001, not the app's native 3000: Redmine owns 3000 on
+# this box, and pointing an MCP client at the wrong 3000 fails as an opaque 404
+# on /sse. Override with MCP_PORT in .env.
+#
+# The container binds 0.0.0.0, so the server refuses to start on the default
+# admin/admin credentials - MCP_ADMIN_PASSWORD is required, not optional.
+
+services:
+  dev-playbook:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: dev-playbook:0.8.0
+    container_name: dev-playbook
+    restart: unless-stopped
+
+    ports:
+      # Loopback only: the dashboard password is weak by choice, so the
+      # port must not be reachable from the LAN. Use "0.0.0.0:${MCP_PORT}:3000"
+      # only alongside a strong MCP_ADMIN_PASSWORD.
+      - "127.0.0.1:${MCP_PORT:-3001}:3000"
+
+    environment:
+      MCP_HOST: "0.0.0.0"
+      MCP_PORT: "3000"
+      MCP_DB_PATH: /data/metrics.db
+      MCP_SERVER_LABEL: "${MCP_SERVER_LABEL:-dev-playbook}"
+      MCP_ADMIN_USER: "${MCP_ADMIN_USER:-admin}"
+      # No default: compose fails loudly rather than the server exiting 1.
+      MCP_ADMIN_PASSWORD: "${MCP_ADMIN_PASSWORD:?set MCP_ADMIN_PASSWORD in .env}"
+      MCP_INACTIVE_DAYS: "${MCP_INACTIVE_DAYS:-2}"
+
+    volumes:
+      # Metrics + auth SQLite. Named volume so `docker compose down` keeps
+      # usage history and issued MCP tokens.
+      - playbook-data:/data
+
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - |
+          import urllib.request, sys
+          sys.exit(0 if urllib.request.urlopen("http://127.0.0.1:3000/healthz", timeout=2).status == 200 else 1)
+      interval: 30s
+      timeout: 3s
+      start_period: 10s
+      retries: 3
+
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  playbook-data:

@@ -24,31 +24,6 @@ jobs:
         working-directory: mcp
         run: uv run ruff format --check .
 
-  validate-standards:
-    runs-on: ubuntu-latest
-    steps:
- - uses: actions/checkout@v4
- - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
- - name: Validate standards (blocking)
-        run: python scripts/validate-rules.py --corpus standards --check
-
-  validate-requirements:
-    runs-on: ubuntu-latest
-    # Draft PRDs must not turn the repo red - continue-on-error for the job.
-    # Approved/shipped hard failures still surface in the log.
-    continue-on-error: true
-    steps:
- - uses: actions/checkout@v4
- - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
- - name: Validate requirements
-        run: python scripts/validate-rules.py --corpus requirements --check
-
   test:
     runs-on: ubuntu-latest
     steps:

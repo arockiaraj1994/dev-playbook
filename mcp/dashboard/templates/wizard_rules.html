@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% import "_wizard.html" as wiz %}
+{% block title %}{{ heading }} - {{ state.project }}{% endblock %}
+{% block crumb %}<a href="/dashboard/standards" style="color:inherit">Standards</a> <span class="crumbs-sep">/</span> <a href="/dashboard/standards/new-project" style="color:inherit">New Project Standards</a> <span class="crumbs-sep">/</span> <span class="current">{{ heading }}</span>{% endblock %}
+
+{% block content %}
+
+<div class="page-header">
+  <div>
+    <h1 class="page-title">{{ heading }}</h1>
+    <p class="page-sub">{{ blurb }}</p>
+  </div>
+</div>
+
+{{ wiz.stepper(steps, current_step) }}
+
+{% set selected = state.language_rules if field == "language_rule" else state.git_rules %}
+{% set counts = namespace(total=0, on=0) %}
+{% for _label, section in sections %}
+  {% for rule in section.rules %}
+    {% set counts.total = counts.total + 1 %}
+    {% if rule.locked or rule.id in selected %}{% set counts.on = counts.on + 1 %}{% endif %}
+  {% endfor %}
+{% endfor %}
+
+<form method="post" action="{{ next_action }}" id="rules-form">
+  <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+  {{ wiz.carry(state, skip=("language_rules" if field == "language_rule" else "git_rules")) }}
+  {% if field == "language_rule" %}{{ wiz.carry_other_rules(state, pack) }}{% endif %}
+
+  <div class="card rule-summary">
+    <div>
+      <strong>{{ counts.on }} of {{ counts.total }} recommended rules enabled.</strong>
+      <span class="se-hint">Open a category below to change any of them.</span>
+    </div>
+    <a href="#" id="toggle-all" class="btn btn-ghost btn-sm">Expand all</a>
+  </div>
+
+  {% for label, section in sections %}
+    {{ wiz.rule_category(label, section, field, selected) }}
+  {% endfor %}
+
+  {{ wiz.nav(back_action, next_label) }}
+</form>
+
+{% endblock %}
+
+{% block page_script %}
+<script>
+(function () {
+  var link = document.getElementById('toggle-all');
+  if (!link) return;
+  var cats = document.querySelectorAll('details.rule-category');
+  var expand = true;
+  link.addEventListener('click', function (e) {
+    e.preventDefault();
+    Array.prototype.forEach.call(cats, function (d) { d.open = expand; });
+    expand = !expand;
+    link.textContent = expand ? 'Expand all' : 'Collapse all';
+  });
+})();
+</script>
+{% endblock %}

@@ -9,12 +9,9 @@
 
   var PAGES = [
     { label: "Dashboard", hint: "page", href: "/dashboard/" },
-    { label: "Standards", hint: "page", href: "/dashboard/projects" },
-    { label: "Requirements", hint: "page", href: "/dashboard/requirements" },
     { label: "Users & adoption", hint: "page", href: "/dashboard/users" },
     { label: "Tokens", hint: "page", href: "/dashboard/tokens" },
     { label: "Setup", hint: "page", href: "/dashboard/setup" },
-    { label: "Guide", hint: "page", href: "/dashboard/guide" },
     { label: "Tools & rule popularity", hint: "page", href: "/dashboard/tools" },
     { label: "Search queries", hint: "page", href: "/dashboard/searches" },
     { label: "Recent activity", hint: "page", href: "/dashboard/activity" },
@@ -43,16 +40,6 @@
       } });
     }
     if (data && data.is_admin) {
-      actions.push({ label: "Reload requirements corpus", hint: "action", run: function () {
-        var form = document.createElement("form");
-        form.method = "post";
-        form.action = "/dashboard/reload";
-        var f = document.createElement("input");
-        f.type = "hidden"; f.name = "_csrf"; f.value = csrfToken();
-        form.appendChild(f);
-        document.body.appendChild(form);
-        form.submit();
-      } });
     }
     if (document.getElementById("logout-form")) {
       actions.push({ label: "Sign out", hint: "action", run: function () {
@@ -65,11 +52,6 @@
   function buildIndex(data) {
     items = PAGES.slice();
     if (data) {
-      (data.projects || []).forEach(function (p) {
-        items.push({ label: p, hint: "standards project", href: "/dashboard/projects/" + encodeURIComponent(p) });
-      });
-      (data.requirement_projects || []).forEach(function (p) {
-        items.push({ label: p, hint: "requirements project", href: "/dashboard/requirements/" + encodeURIComponent(p) });
       });
       (data.users || []).forEach(function (u) {
         items.push({ label: u, hint: "user", href: "/dashboard/users/" + encodeURIComponent(u) });

@@ -1,0 +1,112 @@
+contributes_to: ARCHITECTURE.md
+section: TypeScript
+section_intro: |
+  Source root: `src/`.
+
+  ### Modules
+
+  | Directory | Purpose |
+  | --- | --- |
+  | `src/domain/` | Types and business rules. No I/O, no framework. |
+  | `src/application/` | Use cases orchestrating domain and ports. |
+  | `src/adapters/inbound/` | HTTP handlers, CLI, message consumers. |
+  | `src/adapters/outbound/` | Database clients, HTTP clients, queues. |
+  | `src/config/` | Composition root and configuration parsing. |
+
+  Fill this table in for the real module set before the first feature lands.
+section_outro: |
+  ### Data flow
+
+  A request enters an inbound adapter, which validates it and maps it to
+  application inputs. The application layer orchestrates domain functions and
+  calls outbound ports. Outbound adapters implement those ports. Control flows
+  inward; dependencies point inward.
+
+  ### Where new code goes
+
+  | New thing | Location |
+  | --- | --- |
+  | Domain type or rule | `src/domain/` |
+  | Use case | `src/application/` |
+  | Port interface | `src/application/ports/` |
+  | HTTP handler | `src/adapters/inbound/` |
+  | Client or repository | `src/adapters/outbound/` |
+  | Wiring | `src/config/` |
+
+rules:
+  - id: domain-has-no-io
+    group: dependency
+    severity: hard
+    locked: true
+    title: Keep I/O out of the domain folder
+    body: >-
+      `src/domain/` must not import a database client, an HTTP library,
+      `fs`, or any framework. It depends on the language and on itself.
+
+  - id: dependencies-point-inward
+    group: dependency
+    severity: hard
+    locked: true
+    title: Adapters may use the domain, never the reverse
+    body: >-
+      `adapters` may import `application`; `application` may import
+      `domain`. Never the reverse.
+
+  - id: no-deep-relative-imports
+    group: dependency
+    severity: soft
+    title: Don't import across modules with ../../..
+    body: >-
+      `../../../` reaching across modules is a boundary violation in
+      disguise. Use a path alias and import the module's public entry point.
+
+  - id: import-module-entry-points
+    group: dependency
+    severity: soft
+    title: Import a module's index, not its inner files
+    body: >-
+      Each module exposes an `index.ts`. Importing a file inside another
+      module couples you to its private layout.
+
+  - id: adapters-do-not-import-adapters
+    group: dependency
+    severity: hard
+    title: HTTP handlers must not call the database directly
+    body: >-
+      An inbound adapter must not import an outbound adapter, or vice versa.
+      They communicate through the application layer.
+
+  - id: no-domain-types-over-the-wire
+    group: responsibility
+    severity: hard
+    title: Don't send domain objects straight to JSON
+    body: >-
+      Inbound adapters own their request and response shapes. Sending a
+      domain object straight to JSON makes every internal rename a breaking
+      API change.
+
+  - id: adapters-translate-only
+    group: responsibility
+    severity: hard
+    title: Keep business decisions out of handlers
+    body: >-
+      An adapter converts between transport or storage shapes and
+      application types. Business decisions belong in the domain or the use
+      case.
+
+  - id: composition-root-only-wiring
+    group: responsibility
+    severity: soft
+    title: Build concrete dependencies in one place only
+    body: >-
+      Modules receive their dependencies as arguments. Only `src/config/`
+      constructs concrete implementations.
+
+  - id: no-module-level-side-effects
+    group: responsibility
+    severity: hard
+    title: Importing a file must not start anything
+    body: >-
+      Importing a module must not open a connection, read the environment,
+      or start a timer. Do that in an explicit init function the composition
+      root calls.

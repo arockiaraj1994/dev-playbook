@@ -17,12 +17,3 @@ repos:
         files: ^mcp/.*\.py$
  - id: ruff-format
         files: ^mcp/.*\.py$
-
- - repo: local
-    hooks:
- - id: validate-rules
-        name: validate rule docs
-        entry: python scripts/validate-rules.py
-        language: system
-        pass_filenames: false
-        files: ^(standards|requirements)/.*\.md$

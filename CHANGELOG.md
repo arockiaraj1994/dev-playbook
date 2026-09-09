@@ -8,6 +8,105 @@ changes after 1.0.0 will bump the **major**.
 
 ## [Unreleased]
 
+### Added - dashboard standards module (post-v1.0.0)
+- **Rebuilt the Standards/Projects dashboard page** as a lightweight,
+  self-contained module: `mcp/standards_scanner.py` reads `standards/`
+  straight off disk with no dependency on the deleted corpus/loader/BM25
+  index. Adds `/dashboard/standards` routes and templates, a project detail
+  view, and unit tests.
+- `MCP_STANDARDS_ROOT` is back (defaults to `<repo>/standards`), and the
+  Docker image bakes `standards/` back in.
+- This does **not** restore any MCP tool - `playbook_start` / `playbook_get`
+  / `playbook_find` remain deleted; the scanner only backs the dashboard page.
+- Tests: 105 → 112.
+
+### Removed - BREAKING - v1.0.0 (standards feature deleted from MCP)
+- **The standards MCP tool surface is gone, code included.** Deleted
+  `mcp/tools/` (all three `playbook_*` tools), `mcp/loader.py`,
+  `mcp/corpus.py`, `mcp/search.py`, `mcp/cache.py`, `mcp/refs.py`,
+  `mcp/index_render.py`, `mcp/quality.py`, `mcp/quality_rules.py`,
+  `scripts/validate-rules.py`, `mcp/dev.py`, `TEMPLATE.md` and
+  `CONTRIBUTING.md`. (`standards/` itself and the dashboard's corpus-health
+  page were later rebuilt - see "Added" above.)
+- **The MCP server advertises no tools.** `list_tools()` returns `[]`; every
+  `tools/call` returns `Unknown tool`. Dispatch, timing and metrics recording
+  are intact, so a new surface can be added at one place in `mcp/server.py`.
+- Dashboard temporarily lost the Standards and Guide pages, the corpus-health
+  scoring, the project detail view and `POST /dashboard/reload`; the Standards
+  page was rebuilt (see "Added" above). Users, tools, searches, activity,
+  setup, tokens and user admin remain.
+- CI drops the corpus validation job; pre-commit drops the `validate-rules` hook.
+- Tests: 280 → 105 (the corpus, search, quality, refs and tool suites are gone).
+- Version bumped to **1.0.0**.
+
+### Removed - BREAKING - v0.9.0 (requirements corpus dropped)
+- **The second corpus is gone.** `requirements/` (PRDs, stories, authoring
+  workflows), `mcp/requirement_rules.py`, the PRD/STORY templates, both
+  dashboard requirement pages and the nav item, and the `validate-requirements`
+  CI job are all removed. This reverts the v0.6.0 two-corpus feature; the server
+  serves standards only.
+- **Tool surface shrinks again:**
+  - `playbook_start(project, intent)` - `mode=` and `ref=` removed. It no longer
+    authors PRDs/stories or bundles a requirement.
+  - `playbook_get(project, ref)` - the `req:` ref kind is removed.
+  - `playbook_find(project, query?, type?)` - `corpus=`, `status=` and `prd=`
+    are removed.
+- **The corpus abstraction goes with it.** With one corpus, `corpus=` was a
+  parameter that could only ever hold one value, so it is gone from `DocStore`
+  (35 call sites), `RuleDoc`, `SearchResult`, the BM25 engine, and `CorpusSpec`
+  - which also loses `cache_policy` / `ttl_seconds`. `DocStore` drops
+  `find_by_id`, `stories_of`, `prd_of` and `replace_corpus`, gaining
+  `replace_all`.
+- **`MCP_REQUIREMENTS_ROOT` and `MCP_REQUIREMENTS_TTL` are removed**, along with
+  the TTL reload poll that ran before every tool dispatch.
+- **`POST /dashboard/reload` now reloads standards** instead of requirements, so
+  the dashboard's reload button keeps working - edits to `standards/` no longer
+  need a restart.
+- **Metrics keep their history.** The `requirement_id` / `corpus` columns stay in
+  the schema so pre-0.9.0 rows still read back, and `_LEGACY_TOOL_MAP` still folds
+  the old tool names onto the current three. Only the write path and the
+  requirement-coverage KPI are removed.
+- `standards/apache-camel/` removed; `standards/nexre/` is the reference project.
+- Version bumped to **0.9.0**.
+
+### Changed - BREAKING - v0.8.0 (tool surface → 3, `ref` doc addresses)
+- **Five tools → three.** `playbook_start`, `playbook_get`, `playbook_find`.
+  `playbook_start_task` + `playbook_start_requirement` merge into
+  `playbook_start(mode="code"|"prd"|"story")`; `playbook_search_docs` +
+  `playbook_list_requirements` merge into `playbook_find` (whose `status=` and
+  `prd=` filters were the only capability unique to the latter, and now apply
+  to search results as well as listings).
+- **`playbook_get(ref=…)` replaces `get_doc(kind=, name=, section=, depth=)`.**
+  A `ref` is the string the corpus already uses in `see_also:` / `targets:`
+  frontmatter - `guardrails`, `pattern:repository`, `language:kotlin/testing`,
+  `req:ST-101` - so a rendered Next Call can be followed verbatim. The ~100-line
+  `_format_call` switch that translated between the two vocabularies is gone,
+  and the grammar now lives in one place (`mcp/refs.py`) shared by the tools and
+  `scripts/validate-rules.py`.
+  - `section=` folds into the ref (`language:java/testing`).
+  - `depth=` is **removed**: a story always arrives with its parent PRD summary
+    and a PRD with its story list, which is what `start_task(requirement=)`
+    already did unconditionally while `get_doc` defaulted it off.
+- **The duplication is gone, not just the tool count.** `playbook_start` now
+  composes `get.render_ref()` for its guardrails and requirement blocks instead
+  of re-rendering them; a test asserts the two are byte-identical so they cannot
+  drift again.
+- **Clean break on tool names in frontmatter.** `tool:` entries accept only
+  `playbook_start`, `playbook_get`, `playbook_find`; every pre-0.8.0 alias is
+  rejected by the validator rather than silently rendering nothing. Doc-kind
+  aliases (`gates:`, `requirement:`, `core:`) still resolve. The two standards
+  projects, the requirements project, and `TEMPLATE.md` are migrated.
+- **Metrics history is preserved.** `_LEGACY_TOOL_MAP` folds every historical
+  tool name onto the new three, so the dashboard keeps one row per tool across
+  the rename.
+- **Rule-engine dedupe.** `scripts/validate-rules.py` imports `REQUIRED_FILES` /
+  `REQUIRED_WORKFLOWS` from `quality_rules` instead of redeclaring them, and
+  validates `see_also:` through the same `refs.parse_ref` the server uses.
+- Removed dead code: `metrics.args_to_doc_path` (no production caller, and a
+  third copy of the ref→path mapping), `loader.bootstrap`, and the
+  `allow_omit_for_cross_lookup` branch no caller ever passed.
+- Version bumped to **0.8.0**.
+
 ### Changed - BREAKING - v0.7.0 (tool surface → 5, `playbook_` namespace)
 - **All tools renamed with a `playbook_` prefix** so they cannot collide with
   other MCP servers in a multi-server editor setup: `playbook_start_task`,

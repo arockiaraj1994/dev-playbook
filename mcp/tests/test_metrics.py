@@ -11,7 +11,6 @@ import pytest
 from metrics import (
     MetricsStore,
     _percentile,
-    args_to_doc_path,
     summarize_args,
 )
 
@@ -54,90 +53,6 @@ def test_summarize_args_handles_non_string_values() -> None:
     out = summarize_args({"top_k": 10, "flag": True})
     assert "top_k=10" in out
     assert "flag=True" in out
-
-
-@pytest.mark.parametrize(
-    "tool,args,expected",
-    [
-        ("get_doc", {"project": "p", "kind": "agents"}, "p/AGENTS.md"),
-        (
-            "get_doc",
-            {"project": "p", "kind": "guardrails"},
-            "p/core/guardrails.md+definition-of-done.md",
-        ),
-        ("get_doc", {"project": "p", "kind": "architecture"}, "p/architecture/overview.md"),
-        (
-            "get_doc",
-            {"project": "p", "kind": "architecture", "name": "0007-foo"},
-            "p/architecture/decisions/0007-foo.md",
-        ),
-        (
-            "get_doc",
-            {"project": "p", "kind": "language", "name": "java"},
-            "p/languages/java/standards.md",
-        ),
-        (
-            "get_doc",
-            {"project": "p", "kind": "language", "name": "java", "doc": "testing"},
-            "p/languages/java/testing.md",
-        ),
-        (
-            "get_doc",
-            {"project": "p", "kind": "pattern", "name": "react"},
-            "p/patterns/react.md",
-        ),
-        ("get_doc", {"project": "p", "kind": "skill", "name": "deploy"}, "p/skills/deploy.md"),
-        (
-            "get_doc",
-            {"project": "p", "kind": "workflow", "name": "bug-fix"},
-            "p/workflows/bug-fix.md",
-        ),
-        ("get_doc", {"project": "p", "kind": "gate"}, "p/gates/README.md"),
-        (
-            "get_doc",
-            {"project": "p", "kind": "gate", "name": "verify-java"},
-            "p/gates/scripts/verify-java.sh",
-        ),
-        (
-            "get_doc",
-            {"project": "p", "kind": "requirement", "name": "ST-101"},
-            "requirements/p/ST-101",
-        ),
-        ("get_doc", {"project": "p", "kind": "pattern"}, None),
-        ("get_doc", {"kind": "pattern", "name": "react"}, None),
-        # Legacy tool names still resolve for historical metrics rows.
-        ("get_agents_md", {"project": "p"}, "p/AGENTS.md"),
-        ("get_index", {"project": "p"}, "p/INDEX.md"),
-        ("get_guardrails", {"project": "p"}, "p/core/guardrails.md+definition-of-done.md"),
-        ("get_architecture", {"project": "p"}, "p/architecture/overview.md"),
-        (
-            "get_architecture",
-            {"project": "p", "name": "0007-foo"},
-            "p/architecture/decisions/0007-foo.md",
-        ),
-        (
-            "get_language_rules",
-            {"project": "p", "language": "java"},
-            "p/languages/java/standards.md",
-        ),
-        (
-            "get_language_rules",
-            {"project": "p", "language": "java", "doc": "testing"},
-            "p/languages/java/testing.md",
-        ),
-        ("get_pattern", {"project": "p", "pattern": "react"}, "p/patterns/react.md"),
-        ("get_skill", {"project": "p", "skill": "deploy"}, "p/skills/deploy.md"),
-        ("get_workflow", {"project": "p", "name": "bug-fix"}, "p/workflows/bug-fix.md"),
-        ("get_gate", {"project": "p"}, "p/gates/README.md"),
-        ("get_gate", {"project": "p", "name": "verify-java"}, "p/gates/scripts/verify-java.sh"),
-        ("get_pattern", {"project": "p"}, None),
-        ("get_pattern", {"pattern": "react"}, None),
-        ("search_rules", {"query": "x"}, None),
-        ("get_rules", {"project": "p", "context": "anti-patterns"}, None),
-    ],
-)
-def test_args_to_doc_path(tool: str, args: dict, expected: str | None) -> None:
-    assert args_to_doc_path(tool, args) == expected
 
 
 # ---------------------------------------------------------------------------
@@ -287,12 +202,13 @@ async def test_list_tool_stats_aggregates(store: MetricsStore) -> None:
         tool_name="get_pattern", latency_ms=99, **{**common, "status": "not_found"}
     )
     stats = await store.list_tool_stats(window_days=7)
-    # Legacy names fold onto the canonical playbook_* names for display.
+    # Historical names fold onto the current playbook_* names for display, so
+    # the v0.8.0 rename does not orphan already-recorded calls.
     by_tool = {s.tool_name: s for s in stats}
-    assert by_tool["playbook_search_docs"].calls == 5
-    assert by_tool["playbook_search_docs"].error_count == 0
-    assert 25 <= by_tool["playbook_search_docs"].p50_latency_ms <= 35
-    assert by_tool["playbook_get_doc"].error_count == 1
+    assert by_tool["playbook_find"].calls == 5
+    assert by_tool["playbook_find"].error_count == 0
+    assert 25 <= by_tool["playbook_find"].p50_latency_ms <= 35
+    assert by_tool["playbook_get"].error_count == 1
 
 
 async def test_list_doc_fetches(store: MetricsStore) -> None:

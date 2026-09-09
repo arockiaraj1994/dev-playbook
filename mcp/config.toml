@@ -10,4 +10,4 @@ auth = true
 # Default admin credentials seeded on first run (when no users exist).
 # Override via MCP_ADMIN_USER and MCP_ADMIN_PASSWORD environment variables.
 username = "admin"
-password = "admin"
+password = "admin123"

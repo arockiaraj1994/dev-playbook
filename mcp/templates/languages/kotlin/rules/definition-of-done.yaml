@@ -1,0 +1,27 @@
+contributes_to: core/definition-of-done.md
+section: Kotlin
+
+rules:
+  - id: dod-lint
+    group: mechanical
+    severity: hard
+    title: ktlint and detekt report nothing new
+    body: >-
+      No new ktlint or detekt findings, and no rule suppressed inline to get
+      there.
+
+  - id: dod-public-api-explicit
+    group: correctness
+    severity: soft
+    title: Public declarations state their return type
+    body: >-
+      Public declarations state their return type and carry a KDoc summary
+      where the name is not self-explanatory.
+
+  - id: dod-coroutines-scoped
+    group: correctness
+    severity: hard
+    title: New coroutines are scoped and cancellable
+    body: >-
+      Anything launched belongs to a scope with a defined lifetime and
+      responds to cancellation.

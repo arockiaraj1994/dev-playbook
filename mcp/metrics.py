@@ -60,6 +60,8 @@ _SCHEMA = (
         latency_ms       INTEGER NOT NULL,
         status           TEXT NOT NULL,
         created_at       TEXT NOT NULL,
+        -- Legacy columns from the two-corpus era (removed in v0.9.0). Kept so
+        -- rows recorded before the removal still read back.
         requirement_id   TEXT,
         corpus           TEXT
     )
@@ -68,7 +70,7 @@ _SCHEMA = (
     "CREATE INDEX IF NOT EXISTS idx_calls_tool ON calls(tool_name, created_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_calls_doc ON calls(doc_path, created_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_calls_created ON calls(created_at DESC)",
-    # idx_calls_req is created AFTER the requirement_id migration below - 
+    # idx_calls_req is created AFTER the requirement_id migration below -
     # it must not live in _SCHEMA or upgrades of pre-0.6 DBs fail here.
 )
 
@@ -164,27 +166,36 @@ class DashboardSummary:
 # Helpers
 # ---------------------------------------------------------------------------
 
-# Pre-0.7.0 tool names collapse onto the current playbook_* names so the
-# dashboard shows one row per tool across the rename (same idea as the
-# IN ('search_rules','find_rules',…) unions elsewhere in this module).
+# Historical tool names collapse onto the current playbook_* names so the
+# dashboard keeps showing one row per tool across every rename. Unlike the
+# frontmatter grammar - where v0.8.0 is a deliberate clean break - recorded
+# calls are history and must not be orphaned, so this map only ever grows.
 _LEGACY_TOOL_MAP = {
-    "start_task": "playbook_start_task",
-    "get_doc": "playbook_get_doc",
-    "get_requirement": "playbook_get_doc",
-    "get_guardrails": "playbook_get_doc",
-    "get_agents_md": "playbook_get_doc",
-    "get_architecture": "playbook_get_doc",
-    "get_language_rules": "playbook_get_doc",
-    "get_pattern": "playbook_get_doc",
-    "get_skill": "playbook_get_doc",
-    "get_workflow": "playbook_get_doc",
-    "get_gate": "playbook_get_doc",
-    "find_rules": "playbook_search_docs",
-    "search_rules": "playbook_search_docs",
-    "list_rule_docs": "playbook_search_docs",
-    "get_index": "playbook_search_docs",
-    "list_requirements": "playbook_list_requirements",
-    "start_requirement": "playbook_start_requirement",
+    # → playbook_start
+    "start_task": "playbook_start",
+    "playbook_start_task": "playbook_start",
+    "start_requirement": "playbook_start",
+    "playbook_start_requirement": "playbook_start",
+    # → playbook_get
+    "get_doc": "playbook_get",
+    "playbook_get_doc": "playbook_get",
+    "get_requirement": "playbook_get",
+    "get_guardrails": "playbook_get",
+    "get_agents_md": "playbook_get",
+    "get_architecture": "playbook_get",
+    "get_language_rules": "playbook_get",
+    "get_pattern": "playbook_get",
+    "get_skill": "playbook_get",
+    "get_workflow": "playbook_get",
+    "get_gate": "playbook_get",
+    # → playbook_find
+    "find_rules": "playbook_find",
+    "search_rules": "playbook_find",
+    "list_rule_docs": "playbook_find",
+    "get_index": "playbook_find",
+    "playbook_search_docs": "playbook_find",
+    "list_requirements": "playbook_find",
+    "playbook_list_requirements": "playbook_find",
 }
 
 _CANONICAL_TOOL_SQL = (
@@ -193,11 +204,11 @@ _CANONICAL_TOOL_SQL = (
     + " ELSE tool_name END"
 )
 
-# Family classification on the canonical name (search / get / list) for the
+# Family classification on the canonical name (search / get / start) for the
 # by-tool-family breakdown. LIKE fallbacks keep truly unknown names counted.
-_FAMILY_SEARCH_SQL = f"({_CANONICAL_TOOL_SQL}) IN ('playbook_search_docs')"
-_FAMILY_GET_SQL = f"({_CANONICAL_TOOL_SQL}) = 'playbook_get_doc'"
-_FAMILY_LIST_SQL = f"({_CANONICAL_TOOL_SQL}) LIKE 'playbook_list%' OR tool_name LIKE 'list%'"
+_FAMILY_SEARCH_SQL = f"({_CANONICAL_TOOL_SQL}) = 'playbook_find'"
+_FAMILY_GET_SQL = f"({_CANONICAL_TOOL_SQL}) = 'playbook_get'"
+_FAMILY_START_SQL = f"({_CANONICAL_TOOL_SQL}) = 'playbook_start' OR tool_name LIKE 'start%'"
 
 
 def _now() -> str:
@@ -328,8 +339,6 @@ class MetricsStore:
         doc_path: str | None = None,
         top_result_path: str | None = None,
         top_result_score: float | None = None,
-        requirement_id: str | None = None,
-        corpus: str | None = None,
     ) -> None:
         await asyncio.to_thread(
             self._record_call_sync,
@@ -344,8 +353,6 @@ class MetricsStore:
             doc_path,
             top_result_path,
             top_result_score,
-            requirement_id,
-            corpus,
         )
 
     def _record_call_sync(
@@ -361,8 +368,6 @@ class MetricsStore:
         doc_path: str | None,
         top_result_path: str | None,
         top_result_score: float | None,
-        requirement_id: str | None,
-        corpus: str | None,
     ) -> None:
         with _connect(self._path) as conn:
             conn.execute(
@@ -370,8 +375,8 @@ class MetricsStore:
                 INSERT INTO calls (
                     user_id, user_name, editor_name, tool_name, args_summary,
                     query, doc_path, top_result_path, top_result_score,
-                    latency_ms, status, created_at, requirement_id, corpus
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    latency_ms, status, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     user_id,
@@ -386,8 +391,6 @@ class MetricsStore:
                     latency_ms,
                     status,
                     _now(),
-                    requirement_id,
-                    corpus,
                 ),
             )
 
@@ -659,7 +662,7 @@ class MetricsStore:
                     date(created_at) AS day,
                     SUM(CASE WHEN {_FAMILY_SEARCH_SQL} THEN 1 ELSE 0 END) AS search_count,
                     SUM(CASE WHEN {_FAMILY_GET_SQL}    THEN 1 ELSE 0 END) AS get_count,
-                    SUM(CASE WHEN {_FAMILY_LIST_SQL}   THEN 1 ELSE 0 END) AS list_count
+                    SUM(CASE WHEN {_FAMILY_START_SQL}  THEN 1 ELSE 0 END) AS start_count
                 FROM calls
                 WHERE created_at >= ?
                 GROUP BY date(created_at)
@@ -709,9 +712,7 @@ class MetricsStore:
             }
             for h in range(24):
                 ok, err = by_hour.get(h, (0, 0))
-                hourly.append(
-                    {"label": f"{h:02d}:00", "ok": ok, "err": err, "total": ok + err}
-                )
+                hourly.append({"label": f"{h:02d}:00", "ok": ok, "err": err, "total": ok + err})
         else:
             by_day: dict[str, tuple[int, int]] = {
                 r["bucket"]: (r["ok_count"] or 0, r["err_count"] or 0) for r in bucket_rows
@@ -729,7 +730,7 @@ class MetricsStore:
             r["day"]: {
                 "search": r["search_count"] or 0,
                 "get": r["get_count"] or 0,
-                "list": r["list_count"] or 0,
+                "start": r["start_count"] or 0,
             }
             for r in daily_rows
         }
@@ -739,7 +740,7 @@ class MetricsStore:
         for offset in range(6, -1, -1):
             d = today_dt - timedelta(days=offset)
             key = str(d)
-            data = daily_by_day.get(key, {"search": 0, "get": 0, "list": 0})
+            data = daily_by_day.get(key, {"search": 0, "get": 0, "start": 0})
             daily.append({"label": DAY_ABBR[d.weekday()], **data})
 
         # Live users list
@@ -781,31 +782,6 @@ class MetricsStore:
             top_tools=top_tools,
             window_days=window_days,
         )
-
-    async def requirement_linked_rate(self, *, window_days: int = 30) -> float:
-        """% of start_task calls in the window that carried requirement_id."""
-        return await asyncio.to_thread(self._requirement_linked_rate_sync, window_days)
-
-    def _requirement_linked_rate_sync(self, window_days: int) -> float:
-        cutoff = _iso_offset(days=window_days)
-        with _connect(self._path) as conn:
-            row = conn.execute(
-                """
-                SELECT
-                    COUNT(*) AS total,
-                    SUM(CASE WHEN requirement_id IS NOT NULL AND requirement_id != ''
-                             THEN 1 ELSE 0 END) AS linked
-                FROM calls
-                WHERE tool_name IN ('start_task', 'playbook_start_task')
-                  AND created_at >= ?
-                """,
-                (cutoff,),
-            ).fetchone()
-        total = int(row["total"] or 0)
-        linked = int(row["linked"] or 0)
-        if total == 0:
-            return 0.0
-        return round(100.0 * linked / total, 1)
 
     async def list_recent_calls(self, *, limit: int) -> list[CallRow]:
         return await asyncio.to_thread(self._list_recent_calls_sync, limit)
@@ -979,79 +955,6 @@ def summarize_args(arguments: dict, max_len: int = 200) -> str:
     return out
 
 
-def args_to_doc_path(tool_name: str, arguments: dict) -> str | None:
-    """For doc-fetch tools, return the rule-doc relative path."""
-    project = arguments.get("project")
-    if not project:
-        return None
-
-    # Unified playbook_get_doc(kind=...) - preferred path ("get_doc" kept for
-    # historical metrics rows).
-    if tool_name in ("get_doc", "playbook_get_doc"):
-        kind = arguments.get("kind")
-        name = arguments.get("name")
-        if kind == "agents":
-            return f"{project}/AGENTS.md"
-        if kind == "guardrails":
-            return f"{project}/core/guardrails.md+definition-of-done.md"
-        if kind == "architecture":
-            if name:
-                return f"{project}/architecture/decisions/{name}.md"
-            return f"{project}/architecture/overview.md"
-        if kind == "language":
-            if not name:
-                return None
-            section = arguments.get("section") or arguments.get("doc") or "standards"
-            return f"{project}/languages/{name}/{section}.md"
-        if kind == "pattern":
-            return f"{project}/patterns/{name}.md" if name else None
-        if kind == "skill":
-            return f"{project}/skills/{name}.md" if name else None
-        if kind == "workflow":
-            return f"{project}/workflows/{name}.md" if name else None
-        if kind == "gate":
-            if name:
-                script = name if str(name).endswith(".sh") else f"{name}.sh"
-                return f"{project}/gates/scripts/{script}"
-            return f"{project}/gates/README.md"
-        if kind == "requirement":
-            return f"requirements/{project}/{name}" if name else None
-        return None
-
-    # Legacy tool names kept for historical metrics rows / old clients.
-    if tool_name == "get_agents_md":
-        return f"{project}/AGENTS.md"
-    if tool_name == "get_index":
-        return f"{project}/INDEX.md"
-    if tool_name == "get_guardrails":
-        return f"{project}/core/guardrails.md+definition-of-done.md"
-    if tool_name == "get_architecture":
-        adr = arguments.get("name")
-        if adr:
-            return f"{project}/architecture/decisions/{adr}.md"
-        return f"{project}/architecture/overview.md"
-    if tool_name == "get_language_rules":
-        lang = arguments.get("language")
-        doc = arguments.get("doc") or "standards"
-        return f"{project}/languages/{lang}/{doc}.md" if lang else None
-    if tool_name == "get_pattern":
-        name = arguments.get("pattern")
-        return f"{project}/patterns/{name}.md" if name else None
-    if tool_name == "get_skill":
-        name = arguments.get("skill")
-        return f"{project}/skills/{name}.md" if name else None
-    if tool_name == "get_workflow":
-        name = arguments.get("name")
-        return f"{project}/workflows/{name}.md" if name else None
-    if tool_name == "get_gate":
-        name = arguments.get("name")
-        if name:
-            script = name if name.endswith(".sh") else f"{name}.sh"
-            return f"{project}/gates/scripts/{script}"
-        return f"{project}/gates/README.md"
-    return None
-
-
 # Convenience re-export so consumers can import everything from one module.
 __all__ = [
     "MetricsStore",
@@ -1063,5 +966,4 @@ __all__ = [
     "UserDetail",
     "DashboardSummary",
     "summarize_args",
-    "args_to_doc_path",
 ]

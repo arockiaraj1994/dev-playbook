@@ -1,14 +1,12 @@
 """
-server.py - Dev Playbook MCP Server (SSE only; read-only rules + usage metrics).
+server.py - Dev Playbook MCP Server (SSE only).
 
-Tools (5, all read-only, playbook_ namespaced):
- - playbook_start_task - THE entry point: identity + guardrails + workflow +
-                           next_calls (+ optional requirement= for PRD/story tree walk)
- - playbook_search_docs - list docs (no query) or search (with query); corpus= filter
- - playbook_get_doc - unified fetch by kind= (agents|guardrails|architecture|language|
-                           pattern|skill|workflow|gate|requirement)
- - playbook_list_requirements - catalogue PRDs/stories
- - playbook_start_requirement - PM authoring bootstrap
+The three playbook_* tools that served the standards corpus were removed in
+v1.0.0. What remains is the server skeleton: SSE transport, local auth,
+dashboard sessions and usage metrics - a base to build a new tool surface on.
+The MCP server currently advertises no tools. (The dashboard's Standards page
+reads its corpus from SQLite via standards_store.py / standards_scanner.py -
+admins edit it live from the dashboard; it does not back any MCP tool.)
 
 Run:
   uv run server.py
@@ -30,14 +28,10 @@ Other env vars:
   MCP_HOST - bind host (default 127.0.0.1; 0.0.0.0 for LAN)
   MCP_DB_PATH - sqlite DB (default <repo>/mcp/data/metrics.db)
   MCP_INACTIVE_DAYS - "inactive" threshold (default 2)
-  MCP_SNIPPET_SIZE - search snippet size chars (default 300, 50 - 5000)
   MCP_ADMIN_USER - override default admin username (default: admin)
   MCP_ADMIN_PASSWORD - override default admin password (default: admin)
-  MCP_STANDARDS_ROOT - standards corpus root (default <repo>/standards)
-  MCP_REQUIREMENTS_ROOT - requirements corpus root (default <repo>/requirements)
-  MCP_REQUIREMENTS_TTL - requirements reload TTL seconds (default 300)
-
-Standards load from standards/; requirements from requirements/ (TTL-cached).
+  MCP_STANDARDS_SEED - JSON seed file loaded into the standards tables on
+    first boot, when they're empty (default <repo>/mcp/data/standards_seed.json)
 """
 
 from __future__ import annotations
@@ -68,8 +62,6 @@ from starlette.routing import Mount, Route
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from auth import AuthStore
-from cache import CorpusCache
-from corpus import requirements_spec, standards_spec
 from dashboard.auth_routes import build_auth_routes
 from dashboard.routes import build_dashboard_routes
 from identity import (
@@ -80,15 +72,9 @@ from identity import (
     resolve_bearer_token,
     scope_principal,
 )
-from loader import DocStore, bootstrap_all, resolve_rules_root
 from metrics import MetricsStore, summarize_args
-from search import RulesSearchEngine
 from session import DashboardSession
-from tools import READ_ONLY
-from tools import docs as _docs_mod
-from tools import requirements as _requirements_mod
-from tools import search_tool as _search_mod
-from tools import start_task as _start_task_mod
+from standards_store import StandardsStore
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -102,62 +88,11 @@ logging.basicConfig(
 logger = logging.getLogger("dev-playbook")
 
 SERVER_LABEL = os.getenv("MCP_SERVER_LABEL", "dev-playbook")
-SERVER_VERSION = "0.7.0"
+SERVER_VERSION = "1.0.0"
 DEFAULT_PORT = 3000
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_INACTIVE_DAYS = 2
 _DEFAULT_DB_REL = Path("data") / "metrics.db"
-
-# ---------------------------------------------------------------------------
-# Startup - load both corpora + index
-# ---------------------------------------------------------------------------
-
-logger.info("Bootstrapping standards + requirements stores...")
-try:
-    store: DocStore = bootstrap_all()
-except FileNotFoundError as e:
-    logger.error("%s", e)
-    sys.exit(1)
-
-if not store.all_docs(corpus="standards"):
-    root = resolve_rules_root()
-    found_subdirs = (
-        sorted(p.name for p in root.iterdir() if p.is_dir() and not p.name.startswith("."))
-        if root.is_dir()
-        else []
-    )
-    hint = (
-        f"Found subdirs but none had loadable .md rules: {found_subdirs}."
-        if found_subdirs
-        else "No project subdirectories found under standards/."
-    )
-    logger.error("No standards markdown docs loaded under %s. %s", root, hint)
-    sys.exit(1)
-
-standards_cache = CorpusCache(standards_spec())
-standards_cache.load_sync()  # already loaded via bootstrap_all; sync snapshot
-# Prefer the docs already in `store` for standards; keep cache for policy symmetry.
-standards_cache._docs = store.all_docs(corpus="standards")  # noqa: SLF001
-
-requirements_cache = CorpusCache(requirements_spec())
-
-
-def _on_requirements_reload(_name: str, fresh: list) -> None:
-    store.replace_corpus("requirements", fresh)
-    engine.rebuild(store)
-
-
-requirements_cache._on_reload = _on_requirements_reload  # noqa: SLF001
-requirements_cache.load_sync()
-# Ensure store has the TTL-cache snapshot (same docs if root empty/identical).
-store.replace_corpus("requirements", requirements_cache.snapshot())
-
-engine: RulesSearchEngine = RulesSearchEngine(store)
-logger.info(
-    "Ready. Standards projects: %s | Requirements projects: %s",
-    store.projects(corpus="standards"),
-    store.projects(corpus="requirements"),
-)
 
 # Set by build_app(). The MCP `Server` is module-scoped, so dispatch_tool /
 # _record_call (also module-scoped) read this through the module global rather
@@ -170,25 +105,11 @@ metrics_store: MetricsStore | None = None
 
 server = Server(SERVER_LABEL)
 
-_TOOL_MODULES = [
-    _start_task_mod,
-    _docs_mod,
-    _search_mod,
-    _requirements_mod,
-]
-
 
 @server.list_tools()
 async def list_tools() -> list[Tool]:
-    # Every tool here is read-only; stamp the annotation centrally so a new
-    # tool cannot ship without it. model_copy keeps module DEFINITIONS pristine.
-    defs: list[Tool] = []
-    for mod in _TOOL_MODULES:
-        defs.extend(
-            t if t.annotations else t.model_copy(update={"annotations": READ_ONLY})
-            for t in mod.DEFINITIONS
-        )
-    return defs
+    """No tools yet - the playbook surface was removed in v1.0.0."""
+    return []
 
 
 @dataclass
@@ -198,24 +119,9 @@ class _CallContext:
     doc_path: str | None = None
     top_result_path: str | None = None
     top_result_score: float | None = None
-    requirement_id: str | None = None
-    corpus: str | None = None
-
-
-async def _maybe_reload_requirements() -> None:
-    """TTL-refresh requirements and rebuild BM25 if the corpus swapped."""
-    before = id(requirements_cache.snapshot())
-    fresh = await requirements_cache.docs()
-    # CorpusCache calls on_reload only on actual reload; if TTL hit, no-op.
-    _ = before, fresh
 
 
 async def _dispatch_typed(name: str, arguments: dict, ctx: _CallContext) -> list[TextContent]:
-    await _maybe_reload_requirements()
-    for mod in _TOOL_MODULES:
-        result = await mod.dispatch(name, arguments, ctx, store, engine)
-        if result is not None:
-            return result
     ctx.status = "error"
     return [TextContent(type="text", text=f"Unknown tool: {name}")]
 
@@ -263,8 +169,6 @@ async def _record_call(name: str, args_summary: str, latency_ms: int, ctx: _Call
             doc_path=ctx.doc_path,
             top_result_path=ctx.top_result_path,
             top_result_score=ctx.top_result_score,
-            requirement_id=ctx.requirement_id,
-            corpus=ctx.corpus,
         )
     except Exception:  # noqa: BLE001
         logger.exception("Failed to record call metrics")
@@ -359,12 +263,8 @@ def load_mcp_config() -> McpConfig:
 
 
 SERVER_INSTRUCTIONS = (
-    "Development-standards playbook server. For any coding task, call "
-    "playbook_start_task first - it returns guardrails, the matched workflow, "
-    "and exact next calls. For authoring PRDs/stories, start with "
-    "playbook_start_requirement. Fetch specific docs with playbook_get_doc; "
-    "discover them with playbook_search_docs. Always pass the basename of the "
-    "user's workspace directory as `project`."
+    "Dev Playbook server. This instance advertises no tools - the standards "
+    "surface was removed in v1.0.0 and a new one has not been added yet."
 )
 
 
@@ -424,11 +324,11 @@ def _inject_cookie_send(send: Send, cookie_header: tuple[bytes, bytes]) -> Send:
 
 class AppAuthMiddleware:
     """
-    Path-aware authentication middleware.
+       Path-aware authentication middleware.
 
- - MCP paths use Bearer token auth (identity.py).
- - Dashboard paths use HttpOnly cookie session auth (session.py).
- - Public paths pass through without any credential check.
+    - MCP paths use Bearer token auth (identity.py).
+    - Dashboard paths use HttpOnly cookie session auth (session.py).
+    - Public paths pass through without any credential check.
     """
 
     def __init__(
@@ -552,6 +452,7 @@ class AppDeps:
     metrics: MetricsStore
     inactive_days: int
     auth_store: AuthStore
+    standards: StandardsStore | None = field(default=None)
     sse_transport: SseServerTransport | None = field(default=None)
 
 
@@ -716,9 +617,7 @@ def build_app(deps: AppDeps) -> Starlette:
                 deps.auth_store,
                 dashboard_session,
                 auth_enabled=deps.cfg.auth_enabled,
-                rules_store=store,
-                rules_root=resolve_rules_root(),
-                requirements_cache=requirements_cache,
+                standards=deps.standards,
             ),
         ),
         Route("/", endpoint=_root_redirect, methods=["GET"]),
@@ -768,6 +667,13 @@ def _resolve_inactive_days() -> int:
         return DEFAULT_INACTIVE_DAYS
 
 
+def _resolve_standards_seed_path() -> Path:
+    raw = os.environ.get("MCP_STANDARDS_SEED", "").strip()
+    if raw:
+        return Path(raw).expanduser().resolve()
+    return Path(__file__).resolve().parent / "data" / "standards_seed.json"
+
+
 async def _serve() -> None:
     cfg = load_mcp_config()
     port = _int_env("MCP_PORT", DEFAULT_PORT)
@@ -797,7 +703,23 @@ async def _serve() -> None:
     logger.info("Auth store ready (default admin: %s)", cfg.admin_username)
 
     days = _resolve_inactive_days()
-    app = build_app(AppDeps(cfg=cfg, metrics=metrics, inactive_days=days, auth_store=auth_store))
+
+    standards = StandardsStore(db_path)
+    await standards.init()
+    seed_path = _resolve_standards_seed_path()
+    seeded = await standards.seed_from_json(seed_path)
+    if seeded:
+        logger.info("Seeded %d standards files from %s", seeded, seed_path)
+
+    app = build_app(
+        AppDeps(
+            cfg=cfg,
+            metrics=metrics,
+            inactive_days=days,
+            auth_store=auth_store,
+            standards=standards,
+        )
+    )
 
     logger.info(
         "Starting on http://%s:%d (auth=%s, inactive_days=%d, db=%s)",

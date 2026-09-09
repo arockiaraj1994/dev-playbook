@@ -1,0 +1,102 @@
+doc: core/definition-of-done.md
+label: Definition of done
+merge: by-group
+title: Definition of Done - {{project}}
+description: Build, test and security gates that must pass before a task is complete.
+tags: [definition-of-done, gates]
+intro: |
+  A task is done when every applicable item below is true, not when the code
+  runs locally. Language-specific gates are listed under their own heading.
+groups:
+  - id: mechanical
+    title: Mechanical
+  - id: correctness
+    title: Correctness
+  - id: security
+    title: Security
+  - id: git
+    title: Git
+outro: |
+  Run the gates:
+
+  ```bash
+  {{gates}}
+  ```
+rules:
+  - id: dod-gate-passes
+    group: mechanical
+    severity: hard
+    locked: true
+    title: The verification script passes
+    body: Every gate script for the languages in this project exits zero.
+
+  - id: dod-tests-pass
+    group: mechanical
+    severity: hard
+    locked: true
+    title: All tests pass
+    body: The full suite passes locally, not just the tests you wrote.
+
+  - id: dod-no-new-warnings
+    group: mechanical
+    severity: soft
+    title: No new build or lint warnings
+    body: Build and lint warnings introduced by the change are addressed, not ignored.
+
+  - id: dod-new-code-tested
+    group: correctness
+    severity: hard
+    title: New behaviour has a test
+    body: >-
+      Every new branch of behaviour is covered by a test that fails without the
+      change. A bug fix starts with a test that reproduces the bug.
+
+  - id: dod-no-debug-output
+    group: correctness
+    severity: soft
+    title: No stray debug output or TODOs
+    body: Remove commented-out code, debug printing and scratch TODOs before finishing.
+
+  - id: dod-docs-updated
+    group: correctness
+    severity: soft
+    title: Documentation matches the change
+    body: >-
+      If the change contradicts a rule in this corpus, fix whichever is wrong -
+      do not leave the contradiction in place.
+
+  - id: dod-no-new-secrets
+    group: security
+    severity: hard
+    locked: true
+    title: No new secrets in source
+    body: No credentials, tokens or keys were added to source or configuration.
+    source: OWASP C2
+
+  - id: dod-inputs-validated
+    group: security
+    severity: hard
+    title: New inputs are validated
+    body: Any new field crossing a trust boundary is validated and bounded.
+    source: OWASP C3
+
+  - id: dod-dependencies-checked
+    group: security
+    severity: soft
+    title: New dependencies are justified
+    body: >-
+      Any added dependency is maintained, licence-compatible, and not a duplicate
+      of something already present.
+    source: OWASP C6
+
+  - id: dod-commits-conventional
+    group: git
+    severity: hard
+    title: Commit messages follow the format
+    body: Subjects use the Conventional Commits format and the branch is rebased and clean.
+
+  - id: dod-pr-reviewed
+    group: git
+    severity: hard
+    title: Approved by a reviewer and checks are green
+    body: At least one approval, and every required status check passing.
