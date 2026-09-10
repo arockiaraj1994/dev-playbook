@@ -8,6 +8,89 @@ changes after 1.0.0 will bump the **major**.
 
 ## [Unreleased]
 
+### Added - dev-playbook plugin v0.1.0 - one command instead of a setup guide
+
+Reaching the v1.1.0 tool surface still cost a running server, a bearer token
+and a hand-written `claude mcp add-json`. `mcp/dashboard/templates/setup.html`
+exists because that is fiddly enough to need a three-tab guide. A Claude Code
+plugin collapses it to one command, and carries two things the MCP surface
+cannot: behaviour that applies before any tool is called, and hooks that put a
+project's guardrails in context without the model having to think to ask.
+
+- **stdio transport** - `uv run server.py --stdio`. Reuses the same module-scoped
+  `Server` and `_initialization_options()` as the SSE path, so the five tools
+  are identical across transports by construction rather than by being kept in
+  sync; a subprocess test drives `initialize` → `tools/list` and asserts the two
+  surfaces are the same set. There was no stdio transport before, so a plugin
+  could only point at a running server, never launch one.
+- **`plugins/dev-playbook/`** - the plugin: `plugin.json`, `.mcp.json`, two
+  skills, two hooks, and a transport selector. Versioned independently of the
+  server (`0.1.0` against the server's `1.1.0`).
+- **Team mode** - setting `server_url` switches the transport selector from
+  launching a local server to running `scripts/sse_bridge.py`, which pumps
+  JSON-RPC between Claude Code's stdio and a shared server's SSE endpoint. It
+  inspects nothing, so team mode cannot drift from what that server advertises,
+  and its calls still land on the shared dashboard. Tested against a real server
+  on a real socket rather than against mocked transports.
+- **`.claude-plugin/marketplace.json`** - a self-hosted marketplace at the repo
+  root, with a relative `./plugins/dev-playbook` source, so one repo carries
+  both and there is one version to bump. A validator asserts the two agree.
+- **`using-standards` skill** - the corrected form of
+  `.cursor/rules/mcp-project-cwd.mdc`: `project` is the basename of the
+  workspace directory, never another corpus project, never omitted.
+- **`/dev-playbook:scaffold-standards`** - walks a repo with no standards:
+  detect languages from the tree, read the catalog, take placeholder values out
+  of the actual source (a Java pack's `package` from the real root package),
+  preview with `dry_run=true`, ask, then write.
+- **SessionStart hook** - injects the project's `core/guardrails.md` as context
+  at session start. Guardrails that arrive after the first edit are guardrails
+  that did not work.
+- **PreToolUse hook** on `Write|Edit` - the definition of done, once per
+  session, before the first edit. **Advisory by default**; `enforce_standards`
+  switches it to denying edits in a repo with no standards. Off by default,
+  because installing a plugin should not block anyone by surprise. The advisory
+  context is once per session; the deny is every call, because a gate that
+  closes once is not a gate.
+- Both hooks are wired in **shell form**. The plan called for exec form
+  (`args`) on the grounds that shell form rejects `${user_config.*}`; probing
+  `claude plugin validate` showed exec form is accepted by the manifest and then
+  dropped with *"entry ignored at runtime"* - the hooks would have silently
+  never fired. Shell form costs nothing here because both scripts read
+  `CLAUDE_PLUGIN_OPTION_ENFORCE_STANDARDS` from the environment rather than
+  interpolating it. `scripts/validate_plugin.py` and a test both now assert it.
+- Both hooks read the standards SQLite directly with stdlib `sqlite3` - no MCP
+  round-trip, no dependency on a running server - and exit 0 silently on any
+  failure. A hook must never be why a session is broken. CI asserts they import
+  nothing outside the stdlib.
+- **`scripts/validate_plugin.py`** - stdlib manifest, layout and hook checks as
+  the always-runs floor under `claude plugin validate`, plus a new `plugin` CI
+  job that runs both.
+- **`MCP_EDITOR`** - names the client in telemetry under `--stdio`, where there
+  is no `User-Agent` to sniff.
+
+### Fixed
+
+- **`mcp/config.toml` shipped `password = "admin123"`.** Removed: a committed
+  credential ends up in git history and in every clone, and a marketplace
+  listing points strangers at this repo. The password now comes only from
+  `MCP_ADMIN_PASSWORD`, the way `docker-compose.yml` already required.
+  **The credential remains in git history** - rotating anything that reused it
+  is a separate call.
+- **`config.toml` also shipped `auth = true`** while `README.md` documented the
+  default as false. Reconciled to `false` across `config.toml`, the `server.py`
+  docstring and the README.
+- **`.pre-commit-config.yaml` and `.github/workflows/ci.yml` were not valid
+  YAML** and could not be parsed at all - CI had never run. Indentation fixed
+  in both. `check-json` added (every new manifest is JSON, and a malformed one
+  shows up only as a plugin that silently fails to load), and ruff now covers
+  `plugins/` as well as `mcp/`.
+- **`.cursor/rules/mcp-project-cwd.mdc` named three tools that no longer
+  exist** - `playbook_start`, `playbook_get`, `playbook_find` were renamed in
+  v1.1.0. Corrected, and its claim that `project` is required on every tool
+  narrowed: `playbook_list_templates` does not take one.
+- README claimed 601 tests; it was already 615 before this work, and is 662
+  after.
+
 ### Added - v1.1.0 - the MCP tool surface is back, scaffolding-first
 
 - **Five `playbook_*` tools.** `list_tools()` has returned `[]` since v1.0.0;

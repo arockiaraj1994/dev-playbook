@@ -1,0 +1,46 @@
+{
+  "name": "dev-playbook",
+  "version": "0.1.0",
+  "description": "Your team's coding standards, in context. Serves guardrails, definition of done, per-language rules and task workflows over MCP - and scaffolds them for a repo that has none.",
+  "author": {
+    "name": "Arockiaraj Rayappan",
+    "email": "arockiaraj1994@gmail.com"
+  },
+  "homepage": "https://github.com/arockiaraj1994/dev-agent-playbook",
+  "repository": "https://github.com/arockiaraj1994/dev-agent-playbook",
+  "license": "Apache-2.0",
+  "keywords": [
+    "standards",
+    "guardrails",
+    "code-review",
+    "scaffolding",
+    "mcp"
+  ],
+  "userConfig": {
+    "server_url": {
+      "type": "string",
+      "title": "Shared server URL",
+      "description": "Team mode: the base URL of a shared dev-playbook server, e.g. http://localhost:3001. Leave empty to run a local server on stdio, which needs no infrastructure.",
+      "default": ""
+    },
+    "token": {
+      "type": "string",
+      "title": "Bearer token",
+      "description": "Bearer token for the shared server, from POST /auth/login. Only needed when server_url is set and that server has auth enabled.",
+      "sensitive": true,
+      "default": ""
+    },
+    "server_path": {
+      "type": "directory",
+      "title": "Server directory",
+      "description": "Path to the repo's mcp/ directory. Only needed if the plugin cannot find it next to itself - it normally resolves automatically from the marketplace clone.",
+      "default": ""
+    },
+    "enforce_standards": {
+      "type": "boolean",
+      "title": "Enforce standards",
+      "description": "Block the first Write/Edit of a session when the project's standards are missing, instead of only warning. Off by default: installing a plugin should not stop anyone's work by surprise.",
+      "default": false
+    }
+  }
+}

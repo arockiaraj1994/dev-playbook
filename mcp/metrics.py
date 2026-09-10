@@ -211,9 +211,7 @@ _CANONICAL_TOOL_SQL = (
 # by-tool-family breakdown. LIKE fallbacks keep truly unknown names counted.
 _FAMILY_SEARCH_SQL = f"({_CANONICAL_TOOL_SQL}) = 'playbook_find_standards'"
 _FAMILY_GET_SQL = f"({_CANONICAL_TOOL_SQL}) = 'playbook_get_standard'"
-_FAMILY_START_SQL = (
-    f"({_CANONICAL_TOOL_SQL}) = 'playbook_start_task' OR tool_name LIKE 'start%'"
-)
+_FAMILY_START_SQL = f"({_CANONICAL_TOOL_SQL}) = 'playbook_start_task' OR tool_name LIKE 'start%'"
 
 
 def _now() -> str:

@@ -264,9 +264,7 @@ async def scaffold_project(
         template_version=primary.template_version,
         language=primary.language,
         language_version=primary.language_version,
-        packs=[
-            {"id": p.id, "kind": p.kind, "version": p.template_version} for p in packs
-        ],
+        packs=[{"id": p.id, "kind": p.kind, "version": p.template_version} for p in packs],
         documents=[_to_row(doc) for doc in documents],
         updated_by=actor,
     )

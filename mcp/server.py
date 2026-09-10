@@ -1,16 +1,19 @@
 """
-server.py - Dev Playbook MCP Server (SSE only).
+server.py - Dev Playbook MCP Server.
 
-Serves five playbook_* tools over SSE, backed by the SQLite standards store:
+Serves five playbook_* tools, backed by the SQLite standards store:
 scaffolding a project's standards from the template packs, then reading them
 back. The tools live in tools/, one module per tool, each exporting
 DEFINITIONS and dispatch; this module concatenates and routes them. The
 dashboard edits the same store live.
 
 Run:
-  uv run server.py
+  uv run server.py            # HTTP + SSE on MCP_PORT (default 3000), + dashboard
+  uv run server.py --stdio    # MCP over stdio; no port, no dashboard
 
-Transport: HTTP + Server-Sent Events on MCP_PORT (default 3000).
+Both transports share the same `server` instance and _initialization_options(),
+so the tool surface is identical across them by construction. stdio is what the
+Claude Code plugin launches; SSE is what a shared team instance runs.
 
 Auth model:
   MCP paths  (/sse, /messages/) - Bearer token, validated by identity.py
@@ -18,10 +21,12 @@ Auth model:
   Public     (/auth/login, /healthz, /login GET/POST, /logout)
 
 Config (optional): config.toml next to server.py, or path in MCP_CONFIG.
-  [enable] auth - default false.
+  [enable] auth - default false. Ignored under --stdio (no transport to carry
+    a token; a local stdio server is a single trusted operator).
   [enable] scaffold - default true. False hides playbook_scaffold_standards.
-  [admin] username / password - default admin (seeded on first run).
-  Refuses to start with default admin/admin when MCP_HOST=0.0.0.0.
+  [admin] username - default admin (seeded on first run). There is no
+    committed password: set MCP_ADMIN_PASSWORD, or the seeded default is
+    "admin", which the server refuses to start on when MCP_HOST=0.0.0.0.
 
 Other env vars:
   MCP_PORT - HTTP port (default 3000)
@@ -29,13 +34,17 @@ Other env vars:
   MCP_DB_PATH - sqlite DB (default <repo>/mcp/data/metrics.db)
   MCP_INACTIVE_DAYS - "inactive" threshold (default 2)
   MCP_ADMIN_USER - override default admin username (default: admin)
-  MCP_ADMIN_PASSWORD - override default admin password (default: admin)
+  MCP_ADMIN_PASSWORD - admin password seeded on first run (default: admin,
+    which is refused when MCP_HOST=0.0.0.0)
+  MCP_EDITOR - under --stdio, the client name recorded in telemetry
+    (default: claude-code). Over SSE this comes from the User-Agent instead.
   MCP_STANDARDS_SEED - JSON seed file loaded into the standards tables on
     first boot, when they're empty (default <repo>/mcp/data/standards_seed.json)
 """
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import logging
 import os
@@ -50,6 +59,7 @@ import uvicorn
 from mcp.server import Server
 from mcp.server.models import InitializationOptions
 from mcp.server.sse import SseServerTransport
+from mcp.server.stdio import stdio_server
 from mcp.types import (
     ServerCapabilities,
     TextContent,
@@ -99,6 +109,12 @@ DEFAULT_PORT = 3000
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_INACTIVE_DAYS = 2
 _DEFAULT_DB_REL = Path("data") / "metrics.db"
+
+# The stdio transport carries no credentials, so there is no token to resolve a
+# principal from. Telemetry still wants an author: _record_call returns early on
+# a None principal, and a plugin install that recorded nothing would look broken
+# on the dashboard. One fixed local identity is the honest answer.
+STDIO_PRINCIPAL = Principal(user_id="local-stdio", user_name="local (stdio)", role="user")
 
 # Set by build_app(). The MCP `Server` is module-scoped, so dispatch_tool /
 # _record_call (also module-scoped) read this through the module global rather
@@ -796,7 +812,81 @@ def _int_env(name: str, default: int) -> int:
         sys.exit(1)
 
 
-def main() -> None:
+async def _serve_stdio() -> None:
+    """Serve the same tool surface over stdio, for a locally launched server.
+
+    This is what the Claude Code plugin starts: no port, no bearer token, no
+    dashboard. It reuses the module-scoped ``server`` and
+    ``_initialization_options()`` untouched, so the tool surface is identical to
+    the SSE path by construction rather than by being kept in sync.
+
+    stdout is the protocol here. Logging already goes to stderr (see
+    ``logging.basicConfig`` at the top of this module) - one stray ``print``
+    would corrupt the stream silently, which is why a test asserts it stays
+    clean.
+    """
+    global metrics_store, standards_store
+
+    cfg = load_mcp_config()
+
+    db_path = _resolve_db_path()
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+
+    metrics = MetricsStore(db_path)
+    await metrics.init()
+    metrics_store = metrics
+
+    standards = StandardsStore(db_path)
+    await standards.init()
+    seed_path = _resolve_standards_seed_path()
+    seeded = await standards.seed_from_json(seed_path)
+    if seeded:
+        logger.info("Seeded %d standards files from %s", seeded, seed_path)
+    standards_store = standards
+
+    # A stdio server is a single trusted local operator on their own machine:
+    # nothing carries a token and there is no role to check, so auth is off -
+    # which is the case tools/scaffold.py::_authorize already handles. The
+    # scaffold switch still applies, so `[enable] scaffold = false` turns the
+    # write tool off here too.
+    tools_common.set_policy(scaffold_enabled=cfg.scaffold_enabled, auth_enabled=False)
+
+    principal_var.set(STDIO_PRINCIPAL)
+    editor_var.set(EditorInfo(name=_stdio_editor_name(), version=""))
+
+    logger.info("Serving on stdio (scaffold=%s, db=%s)", cfg.scaffold_enabled, db_path)
+    async with stdio_server() as (read_stream, write_stream):
+        await server.run(read_stream, write_stream, _initialization_options())
+
+
+def _stdio_editor_name() -> str:
+    """Which client launched us. Only the client knows, so it has to tell us.
+
+    Over SSE this is sniffed from the User-Agent; stdio has no headers, so the
+    plugin sets MCP_EDITOR. Claude Code is the default because it is the one
+    with a plugin.
+    """
+    return os.environ.get("MCP_EDITOR", "").strip().lower() or "claude-code"
+
+
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        prog="dev-playbook",
+        description="Dev Playbook MCP server - SSE (default) or stdio.",
+    )
+    parser.add_argument(
+        "--stdio",
+        action="store_true",
+        help="Serve MCP over stdio instead of HTTP+SSE. No port, no dashboard.",
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> None:
+    args = _parse_args(argv)
+    if args.stdio:
+        asyncio.run(_serve_stdio())
+        return
     asyncio.run(_serve())
 
 

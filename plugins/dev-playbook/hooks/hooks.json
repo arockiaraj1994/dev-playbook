@@ -1,0 +1,28 @@
+{
+  "description": "Puts the project's guardrails in context at session start, and its definition of done before the first edit of a session.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/session_context.py\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/edit_gate.py\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

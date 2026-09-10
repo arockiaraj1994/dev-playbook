@@ -5,11 +5,16 @@ alwaysApply: true
 
 # MCP `project` = current directory
 
-When calling **dev-playbook** MCP tools (`playbook_start`, `playbook_get`, `playbook_find`, `playbook_find`, `playbook_start`):
+When calling **dev-playbook** MCP tools (`playbook_start_task`,
+`playbook_get_standard`, `playbook_find_standards`, `playbook_list_templates`,
+`playbook_scaffold_standards`):
 
 1. **`project` MUST be the basename of the current workspace / working directory.**
    - Workspace `/home/.../NexRe` → `project="NexRe"` (or `nexre`; server matches case-insensitively).
    - Workspace `/home/.../dev-agent-playbook` → `project="dev-agent-playbook"`.
 2. **Never invent or default to another corpus project** (e.g. do not pass `nexre` while editing `dev-agent-playbook`).
 3. If the directory name is not a known standards project, pass it anyway and surface the server error - do not substitute a different project.
-4. `project` is required on every tool - never omit it, and never omit it to "pick a convenient" project.
+4. `project` is required on every tool except `playbook_list_templates` - never omit it, and never omit it to "pick a convenient" project.
+
+Claude Code users get this rule from the plugin's `using-standards` skill
+instead; this file is for Cursor, which has no plugin system.
