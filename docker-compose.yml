@@ -37,11 +37,17 @@ services:
       # No default: compose fails loudly rather than the server exiting 1.
       MCP_ADMIN_PASSWORD: "${MCP_ADMIN_PASSWORD:?set MCP_ADMIN_PASSWORD in .env}"
       MCP_INACTIVE_DAYS: "${MCP_INACTIVE_DAYS:-2}"
+      # Private template overlay: uncomment with the matching volume below.
+      # MCP_TEMPLATE_CACHE: /templates
 
     volumes:
       # Metrics + auth SQLite. Named volume so `docker compose down` keeps
       # usage history and issued MCP tokens.
       - playbook-data:/data
+      # A checkout of a private template repo, searched before the bundled
+      # packs (mcp/templates/TEMPLATE_SPEC.md). Read-only: the server never
+      # writes to it, and `git pull` on the host takes effect without a restart.
+      # - "${MCP_TEMPLATES_DIR:-./private-templates}:/templates:ro"
 
     healthcheck:
       test:

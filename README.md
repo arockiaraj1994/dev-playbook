@@ -149,7 +149,7 @@ curl -s -X POST http://localhost:3001/auth/login \
 | `MCP_ADMIN_PASSWORD` | `admin` | Admin password, seeded on first boot. No password is committed to `config.toml`; this is the only way to set one. **Required** (non-default) when `MCP_HOST=0.0.0.0`. |
 | `MCP_EDITOR` | `claude-code` | Under `--stdio`, the client name recorded in telemetry. Over SSE this comes from the `User-Agent` instead. |
 | `MCP_STANDARDS_SEED` | `mcp/data/standards_seed.json` | JSON seed file loaded into the standards tables on first boot (only when they're empty). |
-| `MCP_TEMPLATE_CACHE` | `~/.cache/dev-playbook-templates` | Extra template pack search path, searched before the bundled `mcp/templates/`. |
+| `MCP_TEMPLATE_CACHE` | `~/.cache/dev-playbook-templates` | Extra template pack search path, searched before the bundled `mcp/templates/`. Point it at a checkout of a private template repo to override the bundled packs by id - see "Keeping your own packs in a private repo" in [`TEMPLATE_SPEC.md`](mcp/templates/TEMPLATE_SPEC.md). |
 
 `config.toml` carries two switches: `[enable] auth` (default false) and
 `[enable] scaffold` (default true). With `scaffold = false` the write tool is

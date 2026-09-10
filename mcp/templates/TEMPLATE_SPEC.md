@@ -48,6 +48,38 @@ First match by pack `id` wins, so a synced copy shadows the bundled one and the
 bundled set remains the offline fallback. A malformed pack is logged and skipped;
 it never prevents the others from loading.
 
+### Keeping your own packs in a private repo
+
+The cache root is how a team keeps its real rules out of this public repo while
+the bundled packs stay as the generic fallback:
+
+```bash
+git clone git@github.com:<you>/<private-templates>.git ~/.cache/dev-playbook-templates
+# or anywhere, with MCP_TEMPLATE_CACHE=/path/to/checkout
+```
+
+- **Mirror this layout** at the repo root: `base/pack.yaml`,
+  `languages/<id>/pack.yaml`. Discovery globs `pack.yaml` at any depth, so any
+  `pack.yaml` in the repo is picked up, test fixtures included.
+- **Overrides are whole packs.** A private `java` replaces the bundled `java`
+  completely - rules, docs, gate script and workflows - so copy the bundled pack
+  and edit it rather than shipping only the rules you changed. A partial pack
+  loads, and then scaffolds red.
+- **Keep the base pack's id as `base`.** Only one base is used, and it is the
+  first found. Under a different id both load and the private one wins on search
+  order alone.
+- **Bump `template_version`** so scaffolded projects record which content they
+  came from.
+- **No restart needed.** Packs are re-read on every call, so `git pull` in the
+  checkout takes effect on the next scaffold. Projects already scaffolded are
+  stored rows and do not change.
+- **Check the server log after a pull.** A broken private pack does not fail
+  loudly: it is skipped and the bundled pack of the same id takes its place.
+
+Nothing syncs the checkout for you yet; pull it yourself. The test suite points
+`MCP_TEMPLATE_CACHE` at an empty path, so a local overlay never changes its
+results.
+
 ## `pack.yaml`
 
 ```yaml
