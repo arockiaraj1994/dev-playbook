@@ -4,8 +4,29 @@ Your team's coding standards, served to coding agents over MCP - and
 bootstrapped by them. An agent sitting in a repo with no standards can generate
 a full set from the language template packs, then read them back on every task.
 
-Ships an SSE MCP server with local auth and issuable bearer tokens, a browser
-dashboard for authoring and telemetry, and a SQLite store both share.
+Ships an MCP server (stdio or SSE) with local auth and issuable bearer tokens,
+a browser dashboard for authoring and telemetry, and a SQLite store both share.
+
+## Install as a Claude Code plugin
+
+The one-command path. No server to run, no port, no bearer token:
+
+```
+/plugin marketplace add arockiaraj1994/dev-agent-playbook
+/plugin install dev-playbook@dev-playbook
+```
+
+Restart Claude Code and you have the five tools, two skills, and hooks that put
+this repo's guardrails and definition of done in context without anyone asking.
+The plugin launches the server itself over stdio and keeps its database in the
+plugin's own data directory. It needs [`uv`](https://docs.astral.sh/uv/getting-started/installation/)
+on `PATH`, and nothing else.
+
+Pointing a team at a shared server, enforcement, and the rest of the settings
+are in [`plugins/dev-playbook/README.md`](plugins/dev-playbook/README.md).
+
+Cursor and Windsurf have no plugin system, so they use the manual MCP setup
+further down.
 
 ## The tool surface
 
@@ -51,7 +72,7 @@ viewer (Formatted / Source / Code / Edit). Initial content ships as
 
 | Piece | File | Does |
 |---|---|---|
-| MCP transport | `mcp/server.py` | SSE endpoint, session routing, call dispatch + timing |
+| MCP transport | `mcp/server.py` | SSE endpoint and stdio transport, session routing, call dispatch + timing |
 | Auth | `mcp/auth.py`, `mcp/identity.py` | Local users, pbkdf2 password hashes, opaque bearer tokens |
 | Dashboard sessions | `mcp/session.py` | HttpOnly cookie session + CSRF double-submit |
 | Telemetry | `mcp/metrics.py` | SQLite: registrations, per-call rows, adoption/latency aggregates |
@@ -63,14 +84,21 @@ viewer (Formatted / Source / Code / Edit). Initial content ships as
 | Template packs | `mcp/templates/` | The base pack plus one per language; format contract in `TEMPLATE_SPEC.md` |
 | Template loader | `mcp/templates_source.py`, `mcp/templates_store.py` | Finds packs on disk, then loads, validates and composes them into documents |
 | Scaffolding | `mcp/scaffold_service.py` | The single entry point both the MCP tool and the dashboard wizard call |
+| Claude Code plugin | `plugins/dev-playbook/` | Manifest, MCP server entry, two skills, SessionStart + PreToolUse hooks |
+| Marketplace | `.claude-plugin/marketplace.json` | Self-hosted marketplace; one relative entry, so there is one version to bump |
 
 ## Run it
 
 ```bash
 cd mcp
 uv sync
-uv run server.py
+uv run server.py            # HTTP + SSE on :3000, plus the dashboard
+uv run server.py --stdio    # MCP over stdio; no port, no dashboard
 ```
+
+Both transports share one `Server` instance and one `_initialization_options()`,
+so the tool surface is identical across them by construction. `--stdio` is what
+the Claude Code plugin launches; SSE is what a shared team instance runs.
 
 Or with Docker:
 
@@ -118,7 +146,8 @@ curl -s -X POST http://localhost:3001/auth/login \
 | `MCP_INACTIVE_DAYS` | `2` | Days without a tool call before a user is "inactive". |
 | `MCP_SERVER_LABEL` | `dev-playbook` | Display name in the dashboard and MCP registration. |
 | `MCP_ADMIN_USER` | `admin` | Default admin username (seeded on first boot). |
-| `MCP_ADMIN_PASSWORD` | `admin` | Default admin password. **Required** (non-default) when `MCP_HOST=0.0.0.0`. |
+| `MCP_ADMIN_PASSWORD` | `admin` | Admin password, seeded on first boot. No password is committed to `config.toml`; this is the only way to set one. **Required** (non-default) when `MCP_HOST=0.0.0.0`. |
+| `MCP_EDITOR` | `claude-code` | Under `--stdio`, the client name recorded in telemetry. Over SSE this comes from the `User-Agent` instead. |
 | `MCP_STANDARDS_SEED` | `mcp/data/standards_seed.json` | JSON seed file loaded into the standards tables on first boot (only when they're empty). |
 | `MCP_TEMPLATE_CACHE` | `~/.cache/dev-playbook-templates` | Extra template pack search path, searched before the bundled `mcp/templates/`. |
 
@@ -128,9 +157,16 @@ neither advertised nor callable and the read tools are unaffected. With auth
 enabled, scaffolding additionally requires an admin token; with auth disabled
 there are no roles to check, so the local operator may scaffold.
 
+`config.toml` carries no password. The admin password comes from
+`MCP_ADMIN_PASSWORD` - a committed credential ends up in git history and in
+every clone. With it unset the seeded password is `admin`, which the server
+refuses to start on when `MCP_HOST=0.0.0.0`, and `docker compose` refuses to
+start at all.
+
 Auth is entirely local: create users in `/dashboard/users-admin`, issue MCP
 tokens in `/dashboard/tokens`, and authenticate clients with
-`Authorization: Bearer <token>`.
+`Authorization: Bearer <token>`. Under `--stdio` there is no transport to carry
+a token, so auth does not apply - a local stdio server is one trusted operator.
 
 ## Adding a tool
 
@@ -144,9 +180,10 @@ that sees no annotations is entitled to assume the worst.
 
 ```bash
 cd mcp
-uv run pytest                  # 601 tests
-uv run ruff check .
-uv run ruff format --check .
+uv run pytest                  # 662 tests
+uv run ruff check . ../plugins
+uv run ruff format --check . ../plugins
+cd .. && python3 scripts/validate_plugin.py   # plugin manifests, layout, hooks
 ```
 
 ## License

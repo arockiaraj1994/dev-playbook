@@ -1,10 +1,12 @@
 # Dev Playbook MCP - optional settings (see MCP_CONFIG to override path).
-# When the file is missing, defaults match: enable.auth = false.
+# When the file is missing, these same defaults apply.
 
 [enable]
 # If true, Bearer tokens are required for /sse and /dashboard.
 # Tokens are issued via POST /auth/login and managed in /dashboard/tokens.
-auth = true
+# Default false: a local single-operator server has no one to authenticate.
+# Ignored under --stdio, which carries no transport to put a token on.
+auth = false
 
 # If false, playbook_scaffold_standards is not advertised and refuses to run.
 # The read tools are unaffected. Useful on a shared instance where standards
@@ -12,7 +14,14 @@ auth = true
 scaffold = true
 
 [admin]
-# Default admin credentials seeded on first run (when no users exist).
-# Override via MCP_ADMIN_USER and MCP_ADMIN_PASSWORD environment variables.
+# Admin username seeded on first run (when no users exist).
 username = "admin"
-password = "admin123"
+
+# There is deliberately no password here. A committed password ends up in git
+# history and in every clone of this repo, so the password comes from the
+# MCP_ADMIN_PASSWORD environment variable instead - see .env.example and
+# docker-compose.yml, which fails to start without it.
+#
+# With MCP_ADMIN_PASSWORD unset the seeded password falls back to "admin", and
+# the server refuses to start on that pair when MCP_HOST=0.0.0.0. That keeps a
+# throwaway loopback run frictionless without ever exposing one.

@@ -1,0 +1,34 @@
+{
+  "name": "dev-playbook",
+  "owner": {
+    "name": "Arockiaraj Rayappan",
+    "email": "arockiaraj1994@gmail.com",
+    "url": "https://github.com/arockiaraj1994"
+  },
+  "metadata": {
+    "description": "Self-hosted marketplace for dev-playbook: a team's coding standards, served to coding agents.",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "dev-playbook",
+      "source": "./plugins/dev-playbook",
+      "description": "Your team's coding standards, in context. Serves guardrails, definition of done, per-language rules and task workflows over MCP - and scaffolds them for a repo that has none.",
+      "version": "0.1.0",
+      "author": {
+        "name": "Arockiaraj Rayappan",
+        "email": "arockiaraj1994@gmail.com"
+      },
+      "homepage": "https://github.com/arockiaraj1994/dev-agent-playbook",
+      "license": "Apache-2.0",
+      "keywords": [
+        "standards",
+        "guardrails",
+        "code-review",
+        "scaffolding",
+        "mcp"
+      ],
+      "category": "workflow"
+    }
+  ]
+}

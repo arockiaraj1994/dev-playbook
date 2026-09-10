@@ -1,19 +1,22 @@
 repos:
- - repo: https://github.com/pre-commit/pre-commit-hooks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.6.0
     hooks:
- - id: trailing-whitespace
- - id: end-of-file-fixer
- - id: check-yaml
- - id: check-toml
- - id: check-added-large-files
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      # Every plugin manifest is JSON, and a malformed one shows up only as a
+      # plugin that silently fails to load.
+      - id: check-json
+      - id: check-added-large-files
         args: ["--maxkb=500"]
 
- - repo: https://github.com/astral-sh/ruff-pre-commit
+  - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.4.10
     hooks:
- - id: ruff
+      - id: ruff
         args: ["--fix"]
-        files: ^mcp/.*\.py$
- - id: ruff-format
-        files: ^mcp/.*\.py$
+        files: ^(mcp|plugins|scripts)/.*\.py$
+      - id: ruff-format
+        files: ^(mcp|plugins|scripts)/.*\.py$

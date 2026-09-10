@@ -9,32 +9,57 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
- - uses: actions/checkout@v4
- - name: Install uv
+      - uses: actions/checkout@v4
+      - name: Install uv
         uses: astral-sh/setup-uv@v3
- - name: Set up Python
+      - name: Set up Python
         run: uv python install 3.12
- - name: Install MCP server deps
+      - name: Install MCP server deps
         working-directory: mcp
         run: uv sync
- - name: Ruff check
+      - name: Ruff check
         working-directory: mcp
-        run: uv run ruff check .
- - name: Ruff format check
+        run: uv run ruff check . ../plugins ../scripts
+      - name: Ruff format check
         working-directory: mcp
-        run: uv run ruff format --check .
+        run: uv run ruff format --check . ../plugins ../scripts
 
   test:
     runs-on: ubuntu-latest
     steps:
- - uses: actions/checkout@v4
- - name: Install uv
+      - uses: actions/checkout@v4
+      - name: Install uv
         uses: astral-sh/setup-uv@v3
- - name: Set up Python
+      - name: Set up Python
         run: uv python install 3.12
- - name: Install MCP server deps
+      - name: Install MCP server deps
         working-directory: mcp
         run: uv sync
- - name: Run pytest
+      - name: Run pytest
         working-directory: mcp
         run: uv run pytest -v
+
+  plugin:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # The floor: this runs on every machine, with no CLI to install and
+      # nothing to go stale. A manifest that fails here is broken outright.
+      - name: Validate manifests, layout and hook scripts (stdlib)
+        run: python3 scripts/validate_plugin.py
+      # The ceiling: the real validator, when it is installable. Allowed to be
+      # skipped rather than to fail the build on a CLI availability problem -
+      # the check above already covers the shape.
+      - name: Validate manifests (claude CLI)
+        continue-on-error: true
+        run: |
+          if ! command -v claude >/dev/null 2>&1; then
+            npm install -g @anthropic-ai/claude-code || exit 0
+          fi
+          command -v claude >/dev/null 2>&1 || exit 0
+          claude plugin validate ./plugins/dev-playbook
+          claude plugin validate .

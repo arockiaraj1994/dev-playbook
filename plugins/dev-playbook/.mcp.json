@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "dev-playbook": {
+      "command": "${CLAUDE_PLUGIN_ROOT}/scripts/playbook-mcp.sh",
+      "env": {
+        "MCP_DB_PATH": "${CLAUDE_PLUGIN_DATA}/playbook.db",
+        "MCP_EDITOR": "claude-code",
+        "PLAYBOOK_PLUGIN_ROOT": "${CLAUDE_PLUGIN_ROOT}",
+        "PLAYBOOK_SERVER_URL": "${user_config.server_url}",
+        "PLAYBOOK_TOKEN": "${user_config.token}",
+        "PLAYBOOK_SERVER_PATH": "${user_config.server_path}"
+      }
+    }
+  }
+}
