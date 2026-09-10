@@ -10,6 +10,22 @@ rules:
     body: >-
       `strict` and `noUncheckedIndexedAccess` are enabled and must not be
       weakened for a single file or a single change.
+    help: >-
+      Strict mode is what makes the type system worth having: without strictNullChecks,
+      every type silently includes null and undefined, so the compiler cannot warn about
+      the most common runtime error in the language. noUncheckedIndexedAccess adds the
+      other half, making `arr[i]` possibly-undefined, which is true. Weakening either
+      for one file leaves that file unchecked forever.
+    example:
+      bad: |
+        // tsconfig.json
+        { "compilerOptions": { "strict": false } }
+        // or a per-file // @ts-nocheck
+      good: |
+        { "compilerOptions": {
+            "strict": true,
+            "noUncheckedIndexedAccess": true
+        } }
 
   - id: unknown-at-boundaries
     group: must
@@ -20,6 +36,19 @@ rules:
       until a schema validator has narrowed it. A type assertion is not
       validation.
     source: OWASP C3
+    help: >-
+      `unknown` is the honest type for data you have not checked: the compiler forces a
+      narrowing before any use, so the check cannot be forgotten. An assertion does the
+      opposite, promising a shape nobody verified. Parse once at the edge and the
+      validated type flows inward, with no further checks needed.
+    example:
+      bad: |
+        const body = req.body as CreateOrder;
+        create(body);   // no validation happened anywhere
+      good: |
+        const body: unknown = req.body;
+        const order = CreateOrderSchema.parse(body);   // throws here if wrong
+        create(order);
 
   - id: handle-promise-rejections
     group: must
@@ -28,6 +57,20 @@ rules:
     body: >-
       A floating promise loses its error. Await it, return it, or attach an
       explicit handler.
+    help: >-
+      A floating promise's rejection has nowhere to go: it becomes an unhandled
+      rejection with no request context, and in recent Node it terminates the process by
+      default. Its work also outlives the response, so failures cannot reach the caller
+      and tests can finish before the write lands. Await it, return it, or attach a
+      handler that says what happens on failure.
+    example:
+      bad: |
+        sendWelcomeEmail(user);   // rejection lost
+      good: |
+        await sendWelcomeEmail(user);
+        // or, if it is genuinely fire-and-forget:
+        void sendWelcomeEmail(user).catch((err) =>
+          logger.error({ err }, "welcome email failed"));
 
   - id: no-any
     group: must_not
@@ -37,6 +80,21 @@ rules:
     body: >-
       Use `unknown` and narrow, or write the real type. An `any` disables
       checking for every expression it touches, silently and transitively.
+    help: >-
+      `any` does not just skip checking on the line it appears: it propagates through
+      every expression it touches, so one `any` in a parsing helper disables type
+      checking across everything downstream that consumes the result. `unknown` is the
+      safe alternative with the same meaning of "I don't know yet", but it forces a
+      narrowing before use.
+    example:
+      bad: |
+        function parse(raw: any) { return raw.data.items; }
+        const n: number = parse(x);   // no error, wrong at runtime
+      good: |
+        function parse(raw: unknown) {
+          const parsed = ResponseSchema.parse(raw);
+          return parsed.data.items;
+        }
 
   - id: no-non-null-assertion
     group: must_not
@@ -45,6 +103,20 @@ rules:
     body: >-
       `!` asserts something the compiler cannot see and you cannot prove.
       Narrow with a check, or make the type honest about absence.
+    help: >-
+      `!` is a claim the compiler cannot verify and you usually cannot either: it is
+      right until the map misses, the array is empty or the DOM node has not mounted.
+      Because it suppresses the error rather than handling it, the failure moves to
+      runtime as an unhelpful TypeError. Narrow with a real check, or make the type say
+      the value may be absent.
+    example:
+      bad: |
+        const user = users.get(id)!;
+        user.name;   // TypeError when the id is unknown
+      good: |
+        const user = users.get(id);
+        if (!user) throw new UserNotFound(id);
+        user.name;   // narrowed
 
   - id: no-ts-ignore
     group: must_not
@@ -54,6 +126,19 @@ rules:
       Fix the type error. If a suppression is genuinely unavoidable, use
       `@ts-expect-error` with a comment, so it fails once the underlying
       issue is fixed.
+    help: >-
+      `@ts-ignore` suppresses whatever error appears on the next line, including a
+      different one that arrives later, and it stays silent forever. `@ts-expect-error`
+      inverts that: it fails the build once the underlying problem is fixed, so the
+      suppression cleans itself up. Always pair it with a comment naming what you are
+      waiting for.
+    example:
+      bad: |
+        // @ts-ignore
+        lib.doThing(config);
+      good: |
+        // @ts-expect-error upstream types are wrong; fixed in lib@3.2 (#412)
+        lib.doThing(config);
 
   - id: no-eval
     group: must_not
@@ -64,6 +149,20 @@ rules:
       No `eval`, no `new Function`, no passing a string to `setTimeout`.
       There is always another way, and this one is an injection vector.
     source: OWASP C3
+    help: >-
+      `eval`, `new Function` and a string passed to `setTimeout` all compile text into
+      code at runtime, so any attacker-influenced part of that string becomes code that
+      runs with your privileges. It also defeats bundlers, minifiers and CSP. Whatever
+      the goal is, there is a data-driven alternative: a lookup table, a parser, or a
+      schema.
+    example:
+      bad: |
+        const fn = new Function("return " + userExpression);
+        setTimeout("refresh()", 1000);
+      good: |
+        const handlers = { refresh, reset } as const;
+        handlers[name]?.();
+        setTimeout(refresh, 1000);
 
   - id: no-default-exports
     group: must_not
@@ -72,6 +171,21 @@ rules:
     body: >-
       Named exports keep the name stable across the codebase, make imports
       greppable, and let tooling rename safely.
+    help: >-
+      A default export has no name at the definition site, so every importer invents one
+      and the same module ends up known by four different identifiers. That makes it
+      ungreppable and stops automated rename from working. Named exports keep one name
+      everywhere and let the editor find every use.
+    example:
+      bad: |
+        // order.ts
+        export default function place() { ... }
+        // elsewhere
+        import placeOrder from "./order";
+        import doIt from "./order";     // same thing, different name
+      good: |
+        export function placeOrder() { ... }
+        import { placeOrder } from "./order";
 
   - id: no-enum
     group: must_not
@@ -81,3 +195,18 @@ rules:
       Prefer a union of string literals or an `as const` object. `enum`
       emits runtime code and behaves inconsistently between numeric and
       string forms.
+    help: >-
+      `enum` is one of the few TypeScript features that emits runtime code, so it is not
+      erasable and cannot be used with type-only tooling or `isolatedModules` in the
+      same way. Numeric enums are worse still: any number is assignable to them, so the
+      type checks nothing. A union of string literals is erased entirely and narrows
+      properly.
+    example:
+      bad: |
+        enum Status { Pending, Done }
+        const s: Status = 42;   // accepted
+      good: |
+        type Status = "pending" | "done";
+        // or, when a runtime value is needed:
+        const Status = { Pending: "pending", Done: "done" } as const;
+        type Status = (typeof Status)[keyof typeof Status];

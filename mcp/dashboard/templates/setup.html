@@ -207,8 +207,9 @@ claude mcp add-json {{ server_label }} --scope project '{"type":"sse","url":"{{ 
       <h2>Verify it works</h2>
       <ol class="checklist">
         <li>Restart your editor after adding the MCP server.</li>
-        <li>Ask your AI: <em>"list available projects"</em> - you should see the project names returned from this server.</li>
-        <li>Ask your AI: <em>"playbook_start on apache-camel for fixing a bug in the SFTP route"</em> - you should see guardrails + the matched <code>bug-fix</code> workflow + a <strong>Next Calls</strong> list pointing at related patterns.</li>
+        <li>Ask your AI: <em>"what coding standards apply to apache-camel?"</em> - it should call <code>playbook_find_standards</code> and list the project's documents.</li>
+        <li>Ask your AI: <em>"I'm about to fix a bug in the SFTP route on apache-camel"</em> - it should call <code>playbook_start_task</code> and come back with the guardrails, the matched <code>bug-fix</code> workflow, and a <strong>Next Calls</strong> list.</li>
+        <li>No standards for your repo yet? Ask: <em>"set up coding standards for this project"</em> - it should call <code>playbook_list_templates</code>, then <code>playbook_scaffold_standards</code> with <code>dry_run=true</code> and show you the manifest before writing.</li>
         <li>Watch the pill at the top of this page - it flips to <span class="badge green"><span class="badge-dot"></span>connected</span> within a few seconds of your first call.</li>
       </ol>
       <div class="callout">

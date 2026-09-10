@@ -18,11 +18,16 @@ from standards_scanner import REQUIRED_FILES, REQUIRED_WORKFLOWS, scan_project
 from standards_store import ProjectExists, StandardsStore
 from templates_store import TemplateError, base_pack, compose, load_packs, substitute
 
-LANGUAGE_IDS = ["java", "kotlin", "typescript"]
+LANGUAGE_IDS = ["go", "java", "kotlin", "python", "rust", "typescript"]
 
 # Every language pack that declares a placeholder needs a value here. A new
 # placeholder makes these tests fail, which is the intended nudge.
-PLACEHOLDERS = {"package": "com.example.demo"}
+PLACEHOLDERS = {
+    "package": "com.example.demo",
+    "python_package": "demo_app",
+    "module": "github.com/example/demo",
+    "crate": "demo_app",
+}
 
 COMBINATIONS = [
     list(combo)
@@ -236,8 +241,7 @@ def test_deselecting_an_optional_rule_removes_it():
 
     with_it = {d.relative_path: d for d in compose(base, [java], defaults, None, values)}
     without = {
-        d.relative_path: d
-        for d in compose(base, [java], defaults - {optional.id}, None, values)
+        d.relative_path: d for d in compose(base, [java], defaults - {optional.id}, None, values)
     }
 
     owning = next(p for p, d in with_it.items() if optional.id in d.rule_ids)
@@ -269,8 +273,7 @@ def test_required_workflows_survive_being_deselected():
 
 def test_optional_workflows_can_be_dropped():
     paths = {
-        d.relative_path
-        for d in svc.preview(["java"], "demo", PLACEHOLDERS, workflow_ids=set())
+        d.relative_path for d in svc.preview(["java"], "demo", PLACEHOLDERS, workflow_ids=set())
     }
     for wid in REQUIRED_WORKFLOWS:
         assert f"workflows/{wid}.md" in paths
@@ -308,8 +311,11 @@ async def test_every_language_combination_scaffolds_green(store: StandardsStore,
 
 async def test_scaffold_records_every_pack(store: StandardsStore):
     await svc.scaffold_project(
-        store, languages=["java", "typescript"], project="demo",
-        placeholders=PLACEHOLDERS, actor="tester",
+        store,
+        languages=["java", "typescript"],
+        project="demo",
+        placeholders=PLACEHOLDERS,
+        actor="tester",
     )
 
     project = await store.get_project("demo")
@@ -342,9 +348,7 @@ async def test_documents_record_the_pack_that_produced_them(store: StandardsStor
 
 
 async def test_scaffold_refuses_to_overwrite(store: StandardsStore):
-    await svc.scaffold_project(
-        store, languages=["java"], project="demo", placeholders=PLACEHOLDERS
-    )
+    await svc.scaffold_project(store, languages=["java"], project="demo", placeholders=PLACEHOLDERS)
     with pytest.raises(ProjectExists):
         await svc.scaffold_project(
             store, languages=["java"], project="demo", placeholders=PLACEHOLDERS
@@ -391,9 +395,7 @@ async def test_source_hash_detects_a_local_edit(store: StandardsStore):
     import hashlib
     import sqlite3
 
-    await svc.scaffold_project(
-        store, languages=["java"], project="demo", placeholders=PLACEHOLDERS
-    )
+    await svc.scaffold_project(store, languages=["java"], project="demo", placeholders=PLACEHOLDERS)
 
     conn = sqlite3.connect(str(store.path))
     conn.row_factory = sqlite3.Row
@@ -406,16 +408,19 @@ async def test_source_hash_detects_a_local_edit(store: StandardsStore):
 
     existing = await store.get_file("demo", "core/guardrails.md")
     await store.upsert_file(
-        project="demo", relative_path="core/guardrails.md", kind="markdown",
-        title=existing.title, description=existing.description,
-        frontmatter=existing.frontmatter, body=existing.body + "\n- locally added rule\n",
-        expected_version=existing.version, updated_by="human",
+        project="demo",
+        relative_path="core/guardrails.md",
+        kind="markdown",
+        title=existing.title,
+        description=existing.description,
+        frontmatter=existing.frontmatter,
+        body=existing.body + "\n- locally added rule\n",
+        expected_version=existing.version,
+        updated_by="human",
     )
 
     after = await store.get_file("demo", "core/guardrails.md")
-    edited = hashlib.sha256(
-        f"---\n{after.frontmatter}\n---\n\n{after.body}".encode()
-    ).hexdigest()
+    edited = hashlib.sha256(f"---\n{after.frontmatter}\n---\n\n{after.body}".encode()).hexdigest()
     assert edited != stored, "an edited document must not still match its scaffold hash"
 
 
@@ -432,8 +437,11 @@ async def test_service_is_usable_without_the_http_layer(store: StandardsStore):
         assert "starlette" not in source, f"{module.__name__} must not depend on the web layer"
 
     result = await svc.scaffold_project(
-        store, languages=["kotlin", "typescript"], project="headless",
-        placeholders=PLACEHOLDERS, actor="mcp-tool",
+        store,
+        languages=["kotlin", "typescript"],
+        project="headless",
+        placeholders=PLACEHOLDERS,
+        actor="mcp-tool",
     )
     assert result.document_count > 0
     assert (await scan_project(store, "headless")).indicator == "green"
@@ -479,3 +487,158 @@ async def test_provenance_columns_are_added_to_an_existing_db(tmp_path: Path):
     assert project.packs == []
     row = await s.get_file("legacy", "AGENTS.md")
     assert row is not None and row.body == "body"
+
+
+# -- rule help (wizard-only metadata) ---------------------------------------
+
+# Packs whose rules have not been given help yet. The wizard falls back to the
+# rule's own body for these, so they render correctly - but the coverage test
+# below stops the authored packs from regressing, and finishing a pack here is
+# a one-line deletion rather than a forgotten intention.
+_PACKS_WITHOUT_HELP = {"go", "kotlin", "rust"}
+
+
+def _rule_pack(tmp_path: Path, rules: list[dict]) -> Path:
+    """A minimal one-document pack, for exercising the rule parser."""
+    root = tmp_path / "hp"
+    (root / "rules").mkdir(parents=True)
+    (root / "pack.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "id": "hp",
+                "kind": "language",
+                "title": "Helpy",
+                "language": "helpy",
+                "language_version": "1",
+                "template_version": "1.0.0",
+                "gate": "gates/scripts/verify-helpy.sh",
+            }
+        ),
+        encoding="utf-8",
+    )
+    (root / "rules" / "d.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "doc": "languages/helpy/d.md",
+                "title": "D",
+                "description": "d",
+                "groups": [{"id": "g", "title": "G"}],
+                "rules": rules,
+            }
+        ),
+        encoding="utf-8",
+    )
+    return root / "pack.yaml"
+
+
+def _rule(**over) -> dict:
+    return {"id": "r", "group": "g", "title": "A rule", "body": "b", **over}
+
+
+def test_help_and_example_round_trip(tmp_path: Path):
+    manifest = _rule_pack(
+        tmp_path,
+        [
+            _rule(
+                help="Why it matters.",
+                example={"lang": "python", "bad": "x = 1", "good": "x = 2"},
+            )
+        ],
+    )
+    rule = templates_store._load_pack(manifest).all_rules[0]
+
+    assert rule.help_text == "Why it matters."
+    assert rule.example is not None
+    assert (rule.example.lang, rule.example.bad, rule.example.good) == (
+        "python",
+        "x = 1",
+        "x = 2",
+    )
+
+
+def test_example_lang_defaults_to_the_pack_language(tmp_path: Path):
+    manifest = _rule_pack(tmp_path, [_rule(example={"good": "ok"})])
+    rule = templates_store._load_pack(manifest).all_rules[0]
+
+    assert rule.example is not None
+    assert rule.example.lang == "helpy"
+
+
+def test_one_sided_example_is_accepted(tmp_path: Path):
+    manifest = _rule_pack(tmp_path, [_rule(example={"bad": "only the wrong way"})])
+    rule = templates_store._load_pack(manifest).all_rules[0]
+
+    assert rule.example is not None
+    assert rule.example.bad == "only the wrong way"
+    assert rule.example.good == ""
+
+
+def test_example_with_neither_side_is_rejected(tmp_path: Path):
+    manifest = _rule_pack(tmp_path, [_rule(example={"lang": "python"})])
+
+    with pytest.raises(TemplateError, match="neither 'bad' nor 'good'"):
+        templates_store._load_pack(manifest)
+
+
+def test_example_that_is_not_a_mapping_is_rejected(tmp_path: Path):
+    manifest = _rule_pack(tmp_path, [_rule(example="see the docs")])
+
+    with pytest.raises(TemplateError, match="not a mapping"):
+        templates_store._load_pack(manifest)
+
+
+def test_non_string_help_is_rejected(tmp_path: Path):
+    manifest = _rule_pack(tmp_path, [_rule(help=["a", "b"])])
+
+    with pytest.raises(TemplateError, match="non-string 'help'"):
+        templates_store._load_pack(manifest)
+
+
+def test_a_rule_without_help_loads_with_empty_defaults(tmp_path: Path):
+    manifest = _rule_pack(tmp_path, [_rule()])
+    rule = templates_store._load_pack(manifest).all_rules[0]
+
+    assert rule.help_text == ""
+    assert rule.example is None
+
+
+def test_help_never_reaches_the_generated_markdown(tmp_path: Path):
+    """Help is wizard-only metadata.
+
+    This is what pins that decision: source_hash provenance means any change to
+    the generated bullet invalidates every stored document's hash, so composing
+    with and without help must be byte-identical.
+    """
+    plain = templates_store._load_pack(_rule_pack(tmp_path / "a", [_rule()]))
+    helped = templates_store._load_pack(
+        _rule_pack(
+            tmp_path / "b",
+            [
+                _rule(
+                    help="A long explanation that must not appear in the output.",
+                    example={"bad": "NEVER_IN_OUTPUT", "good": "NOR_THIS"},
+                )
+            ],
+        )
+    )
+
+    def render(pack):
+        return {d.relative_path: d.content for d in compose(base_pack(), [pack], PLACEHOLDERS)}
+
+    before, after = render(plain), render(helped)
+
+    assert before.keys() == after.keys()
+    for path in before:
+        assert before[path] == after[path], f"{path} changed when help was added"
+    assert "NEVER_IN_OUTPUT" not in "".join(after.values())
+
+
+@pytest.mark.parametrize("pack_id", sorted(set(LANGUAGE_IDS) - _PACKS_WITHOUT_HELP))
+def test_authored_language_packs_have_help_for_every_rule(pack_id: str):
+    missing = [r.id for r in load_packs()[pack_id].all_rules if not r.help_text]
+    assert not missing, f"{pack_id}: rules without help: {missing}"
+
+
+def test_base_pack_has_help_for_every_rule():
+    missing = [r.id for r in base_pack().all_rules if not r.help_text]
+    assert not missing, f"base: rules without help: {missing}"

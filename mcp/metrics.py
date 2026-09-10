@@ -167,35 +167,38 @@ class DashboardSummary:
 # ---------------------------------------------------------------------------
 
 # Historical tool names collapse onto the current playbook_* names so the
-# dashboard keeps showing one row per tool across every rename. Unlike the
-# frontmatter grammar - where v0.8.0 is a deliberate clean break - recorded
-# calls are history and must not be orphaned, so this map only ever grows.
+# dashboard keeps showing one row per tool across every rename. Recorded calls
+# are history and must not be orphaned, so this map only ever grows - v1.1.0
+# added the v0.8/0.9 three (playbook_start / _get / _find) as sources, having
+# retargeted every entry onto the current <verb>_<resource> names.
 _LEGACY_TOOL_MAP = {
-    # → playbook_start
-    "start_task": "playbook_start",
-    "playbook_start_task": "playbook_start",
-    "start_requirement": "playbook_start",
-    "playbook_start_requirement": "playbook_start",
-    # → playbook_get
-    "get_doc": "playbook_get",
-    "playbook_get_doc": "playbook_get",
-    "get_requirement": "playbook_get",
-    "get_guardrails": "playbook_get",
-    "get_agents_md": "playbook_get",
-    "get_architecture": "playbook_get",
-    "get_language_rules": "playbook_get",
-    "get_pattern": "playbook_get",
-    "get_skill": "playbook_get",
-    "get_workflow": "playbook_get",
-    "get_gate": "playbook_get",
-    # → playbook_find
-    "find_rules": "playbook_find",
-    "search_rules": "playbook_find",
-    "list_rule_docs": "playbook_find",
-    "get_index": "playbook_find",
-    "playbook_search_docs": "playbook_find",
-    "list_requirements": "playbook_find",
-    "playbook_list_requirements": "playbook_find",
+    # → playbook_start_task
+    "start_task": "playbook_start_task",
+    "start_requirement": "playbook_start_task",
+    "playbook_start_requirement": "playbook_start_task",
+    "playbook_start": "playbook_start_task",
+    # → playbook_get_standard
+    "get_doc": "playbook_get_standard",
+    "playbook_get_doc": "playbook_get_standard",
+    "get_requirement": "playbook_get_standard",
+    "get_guardrails": "playbook_get_standard",
+    "get_agents_md": "playbook_get_standard",
+    "get_architecture": "playbook_get_standard",
+    "get_language_rules": "playbook_get_standard",
+    "get_pattern": "playbook_get_standard",
+    "get_skill": "playbook_get_standard",
+    "get_workflow": "playbook_get_standard",
+    "get_gate": "playbook_get_standard",
+    "playbook_get": "playbook_get_standard",
+    # → playbook_find_standards
+    "find_rules": "playbook_find_standards",
+    "search_rules": "playbook_find_standards",
+    "list_rule_docs": "playbook_find_standards",
+    "get_index": "playbook_find_standards",
+    "playbook_search_docs": "playbook_find_standards",
+    "list_requirements": "playbook_find_standards",
+    "playbook_list_requirements": "playbook_find_standards",
+    "playbook_find": "playbook_find_standards",
 }
 
 _CANONICAL_TOOL_SQL = (
@@ -206,9 +209,11 @@ _CANONICAL_TOOL_SQL = (
 
 # Family classification on the canonical name (search / get / start) for the
 # by-tool-family breakdown. LIKE fallbacks keep truly unknown names counted.
-_FAMILY_SEARCH_SQL = f"({_CANONICAL_TOOL_SQL}) = 'playbook_find'"
-_FAMILY_GET_SQL = f"({_CANONICAL_TOOL_SQL}) = 'playbook_get'"
-_FAMILY_START_SQL = f"({_CANONICAL_TOOL_SQL}) = 'playbook_start' OR tool_name LIKE 'start%'"
+_FAMILY_SEARCH_SQL = f"({_CANONICAL_TOOL_SQL}) = 'playbook_find_standards'"
+_FAMILY_GET_SQL = f"({_CANONICAL_TOOL_SQL}) = 'playbook_get_standard'"
+_FAMILY_START_SQL = (
+    f"({_CANONICAL_TOOL_SQL}) = 'playbook_start_task' OR tool_name LIKE 'start%'"
+)
 
 
 def _now() -> str:

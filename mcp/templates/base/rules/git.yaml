@@ -39,6 +39,21 @@ rules:
       A breaking change is marked with `!` after the type or a `BREAKING CHANGE:`
       footer.
     source: Conventional Commits 1.0.0
+    help: >-
+      The prefix turns commit history into data: release tooling can derive the next
+      version number and a grouped changelog without anyone transcribing them by hand.
+      That only works if the format has no exceptions, since one unparsed commit is one
+      silently missing changelog entry. The `!` marker is what separates a routine minor
+      bump from a release that needs a migration note.
+    example:
+      lang: text
+      bad: |
+        updated the cart
+        Cart fixes (#412)
+      good: |
+        feat(cart): apply percentage discounts
+        fix(cart): stop stacking the same coupon twice
+        feat(api)!: drop the v1 checkout endpoint
 
   - id: imperative-subject
     group: commits
@@ -47,6 +62,17 @@ rules:
     body: >-
       Write the subject as a command - "add retry", not "added retry" - in around
       50 characters, with no trailing full stop.
+    help: >-
+      Git's own generated messages are imperative ("Merge branch", "Revert"), so
+      matching them keeps the log in one voice. The length limit is practical rather
+      than stylistic: `git log --oneline`, blame views and PR lists all truncate around
+      there, and a subject that survives truncation is a subject people actually read.
+    example:
+      lang: text
+      bad: |
+        Added a retry to the payment client because it was flaking.
+      good: |
+        feat(payments): retry on gateway timeout
 
   - id: explain-why-in-body
     group: commits
@@ -56,6 +82,25 @@ rules:
       The diff already shows what changed. Use the body for the reason, the
       alternative you rejected, and anything a future reader would otherwise have
       to reconstruct.
+    help: >-
+      In a year the diff will still be legible and the reasoning will be gone. The body
+      is where you leave what could not be reconstructed from the code: the constraint
+      that forced this shape, the option you tried first and abandoned, the ticket
+      behind the deadline. Write it for the person deciding whether they may change this
+      line.
+    example:
+      lang: text
+      bad: |
+        perf(search): add an index on orders.created_at
+
+        Adds an index on created_at.
+      good: |
+        perf(search): add an index on orders.created_at
+
+        The dashboard query scanned 2M rows and timed out past
+        30 days. A composite (tenant_id, created_at) index was
+        faster still but doubled write latency on the hot insert
+        path, so this stays single-column.
 
   - id: atomic-commits
     group: commits
@@ -64,6 +109,21 @@ rules:
     body: >-
       Each commit builds and passes tests on its own. Split unrelated work rather
       than bundling it, so it can be reviewed and reverted independently.
+    help: >-
+      Two guarantees depend on each commit standing alone. `git bisect` assumes every
+      commit builds, so one broken intermediate commit costs you the whole search; and
+      `git revert` can only undo the bad half of a commit if the halves were never
+      joined. Splitting takes minutes at authoring time and saves hours during an
+      incident.
+    example:
+      lang: text
+      bad: |
+        feat: add discounts, rename TaxCalc, bump httpx
+          # revert the regression and you lose the upgrade too
+      good: |
+        build(deps): bump httpx to 0.27
+        refactor(tax): rename TaxCalc to TaxCalculator
+        feat(cart): apply percentage discounts
 
   - id: no-wip-commits-on-main
     group: commits
@@ -72,6 +132,22 @@ rules:
     body: >-
       Clean the branch up before merging. Squash the noise so the default branch
       reads as a sequence of deliberate changes.
+    help: >-
+      Work-in-progress commits are useful while you are working and noise forever
+      afterwards. Once merged they dilute the history that `git log` and `git blame` are
+      supposed to explain, and they break the assumption that every commit on the
+      default branch is a deliberate, working change. Squash them before the merge, not
+      after.
+    example:
+      lang: text
+      bad: |
+        wip
+        wip 2
+        fix typo
+        fix typo again
+        feat(cart): apply percentage discounts
+      good: |
+        feat(cart): apply percentage discounts
 
   - id: short-lived-branches
     group: branches
@@ -82,6 +158,20 @@ rules:
       Branch from the default branch, merge back within a day or two. Beyond that
       a branch diverges and the merge becomes the risky part of the work.
     source: Trunk Based Development
+    help: >-
+      Merge pain grows with the square of the time a branch is open: the longer you are
+      away, the more the default branch has moved and the more of your own work you have
+      to re-reason about while resolving conflicts. A branch open for weeks also hides
+      its risk until the end, when the merge itself becomes the dangerous step. Slice
+      the work so it can land in pieces.
+    example:
+      lang: text
+      bad: |
+        feat/checkout-rewrite   open 6 weeks, 84 files, 3 rebases
+      good: |
+        feat/checkout-extract-totals    merged day 1
+        feat/checkout-new-tax-rules     merged day 2
+        feat/checkout-swap-provider     merged day 4
 
   - id: no-direct-push-to-default
     group: branches
@@ -92,6 +182,18 @@ rules:
       Everything arrives through a pull request, including changes by
       administrators. Protect the branch so this is enforced rather than agreed.
     source: GitHub branch protection
+    help: >-
+      The exemption is the problem. If administrators can push directly, the branch is
+      protected only by everyone's continued good judgement, including at 3am during an
+      incident, which is exactly when judgement is worst. Enforce it in the platform so
+      the rule holds without anyone having to remember it.
+    example:
+      lang: text
+      bad: |
+        $ git push origin main    # succeeds; nothing reviewed it
+      good: |
+        $ git push origin main
+          ! [remote rejected] protected branch hook declined
 
   - id: no-force-push-shared
     group: branches
@@ -101,6 +203,18 @@ rules:
     body: >-
       Rewriting history someone else has pulled destroys their work. Force-push
       only to a branch you alone are working on, and prefer `--force-with-lease`.
+    help: >-
+      Force-pushing replaces history other people have already based work on. Their next
+      pull becomes a conflict against commits that no longer exist, and recovering it
+      means digging through reflogs on their machine, not yours. `--force-with-lease`
+      refuses when the remote has moved since you last fetched, which is precisely the
+      case where someone else's work is at stake.
+    example:
+      lang: text
+      bad: |
+        $ git push --force origin main
+      good: |
+        $ git push --force-with-lease origin feat/my-own-branch
 
   - id: rebase-before-merge
     group: branches
@@ -109,6 +223,22 @@ rules:
     body: >-
       Resolve conflicts on your branch, not in the merge. A linear history makes
       `git bisect` and `git log` worth using.
+    help: >-
+      Conflicts resolved on your branch are resolved where you can still run the tests
+      and where the resolution is reviewable. Resolved inside a merge commit, they land
+      unreviewed on the default branch. A linear history is the second payoff: `git
+      bisect` behaves predictably and `git log` reads as a sequence rather than a braid.
+    example:
+      lang: text
+      bad: |
+        *   Merge branch 'main' into feat/x
+        |\
+        | * ...
+        *   Merge branch 'main' into feat/x   # again
+      good: |
+        * feat(cart): apply percentage discounts
+        * fix(tax): round half up
+        * chore(deps): bump httpx
 
   - id: descriptive-branch-names
     group: branches
@@ -117,6 +247,20 @@ rules:
     body: >-
       Use a consistent shape such as `feat/short-description` or
       `fix/ticket-id-short-description`.
+    help: >-
+      Branch names show up in PR lists, CI dashboards and everyone's local `git branch`
+      output. A consistent prefix lets tooling filter on them and lets a person scanning
+      the list see the shape of what is in flight. The cost is nil; the payoff is that
+      nobody has to open a PR to find out what it is.
+    example:
+      lang: text
+      bad: |
+        patch-1
+        my-branch
+        test2
+      good: |
+        feat/cart-percentage-discounts
+        fix/412-duplicate-coupon
 
   - id: small-changes
     group: review
@@ -127,6 +271,20 @@ rules:
       reviewer may reject a change for size alone. Split it instead of asking them
       to skim.
     source: Google eng-practices
+    help: >-
+      Review quality falls off a cliff with size: past a few hundred lines reviewers
+      stop reading and start skimming, so a large PR reliably gets a faster approval and
+      a worse review. Size is therefore a legitimate reason to send a change back.
+      Splitting is usually easier than it looks, since most large diffs contain one real
+      change plus preparation.
+    example:
+      lang: text
+      bad: |
+        feat: new checkout flow   +1,840 −620 across 47 files
+      good: |
+        refactor: extract totals calculation   +120 −95
+        feat: add the new tax rules            +180 −20
+        feat: switch checkout to the new flow  +90  −140
 
   - id: review-before-merge
     group: review
@@ -136,6 +294,17 @@ rules:
     body: >-
       No change reaches the default branch without another person approving it,
       and the author never approves their own.
+    help: >-
+      A second pair of eyes catches the class of mistake you cannot catch yourself,
+      because the same assumption that produced the bug is the one you would re-read the
+      code with. Self-approval defeats the entire mechanism, so it is barred even when
+      you are certain and even when the change is small.
+    example:
+      lang: text
+      bad: |
+        Approved by @author   ·  merged
+      good: |
+        Approved by @a-colleague  ·  merged
 
   - id: review-within-one-day
     group: review
@@ -145,6 +314,19 @@ rules:
       Reviewing is not an interruption to the work, it is the work. Optimise for
       how fast the team ships, not how fast one person writes code.
     source: Google eng-practices
+    help: >-
+      A branch waiting on review is finished work earning nothing, and it drifts further
+      from the default branch every hour. Teams optimising for individual writing speed
+      while letting reviews sit end up shipping more slowly overall, because everything
+      queues behind the review step. Treat reviewing as part of the work, not an
+      interruption to it.
+    example:
+      lang: text
+      bad: |
+        PR opened Monday, first comment Thursday
+          (branch now 40 commits behind)
+      good: |
+        PR opened Monday 10:00, reviewed Monday 15:00, merged
 
   - id: green-before-merge
     group: review
@@ -154,6 +336,17 @@ rules:
     body: >-
       Required status checks must be green. Never merge intending to fix the build
       afterwards.
+    help: >-
+      "I'll fix the build right after" means the default branch is broken for everyone
+      in the meantime, and every subsequent PR now shows a failure that is not theirs.
+      It also destroys the signal: once a red build is normal, nobody investigates the
+      next one. Fix it on the branch, then merge.
+    example:
+      lang: text
+      bad: |
+        2 checks failing  ·  "merging, follow-up fix incoming"
+      good: |
+        all checks green  ·  merged
 
   - id: pr-describes-intent
     group: review
@@ -162,6 +355,22 @@ rules:
     body: >-
       Say what changed, why, and how it was verified. Link the issue. A reviewer
       should not have to ask what problem this solves.
+    help: >-
+      The reviewer's first job is deciding whether this is the right change, and they
+      cannot do that from the diff alone. Say what problem it solves, why this approach,
+      and how you convinced yourself it works. Linking the issue means the reasoning
+      stays findable from either end long after the PR falls off the first page.
+    example:
+      lang: text
+      bad: |
+        Title: fixes
+        Body: (empty)
+      good: |
+        Title: fix(cart): stop stacking the same coupon twice
+        Body: Closes #412. The coupon list was deduplicated by
+        object identity, so two loads of the same coupon both
+        applied. Keys by coupon code instead.
+        Verified: new regression test, plus manual check on staging.
 
   - id: semver-releases
     group: release
@@ -171,6 +380,21 @@ rules:
       `fix` maps to a patch release, `feat` to a minor, a breaking change to a
       major. Tag the release commit.
     source: Semantic Versioning 2.0.0
+    help: >-
+      Semantic versioning is a promise to consumers about upgrade risk: a patch is safe,
+      a minor adds without breaking, a major needs work. The mapping from commit types
+      is what makes that promise cheap to keep, since the version falls out of the
+      history rather than out of a judgement call. Tagging the release commit is what
+      makes a version reproducible later.
+    example:
+      lang: text
+      bad: |
+        v2.4.0 -> v3.0.0   # only bug fixes; consumers now
+                           # budget for a migration that isn't needed
+      good: |
+        fix: ...      -> v2.4.1
+        feat: ...     -> v2.5.0
+        feat!: ...    -> v3.0.0
 
   - id: maintain-changelog
     group: release
@@ -180,6 +404,24 @@ rules:
       Record what changed for humans, grouped as Added, Changed, Fixed, Removed
       and Security, newest first.
     source: Keep a Changelog
+    help: >-
+      A changelog answers the question a raw commit log cannot: what does this release
+      mean for me? The fixed groupings let a reader skip straight to what they care
+      about, and Security especially, which is the section people scan when deciding how
+      urgently to upgrade. Newest first because that is the entry almost everyone wants.
+    example:
+      lang: text
+      bad: |
+        ## v2.5.0
+        - 47 commits, see git log
+      good: |
+        ## v2.5.0
+        ### Added
+        - Percentage discounts on cart totals
+        ### Fixed
+        - Same coupon could be applied twice (#412)
+        ### Security
+        - Bumped httpx for CVE-2026-1234
 
   - id: no-secrets-in-history
     group: security
@@ -190,6 +432,19 @@ rules:
       Removing a secret in a later commit does not remove it from history. Treat
       anything committed as compromised: rotate it first, then purge.
     source: OWASP C2
+    help: >-
+      Deleting a secret in a later commit changes the current tree and nothing else: the
+      value is still in the object database, in every clone, and in any fork or CI cache
+      made in between. So the order matters. Rotate first, because that is what actually
+      ends the exposure, and treat purging history as cleanup rather than as the remedy.
+    example:
+      lang: text
+      bad: |
+        git commit -m "remove api key"   # key still in HEAD~1,
+                                         # and in everyone's clone
+      good: |
+        1. rotate the key at the provider   (exposure ends here)
+        2. purge from history, force-push, tell the team to re-clone
 
   - id: secret-scanning-enabled
     group: security
@@ -199,6 +454,18 @@ rules:
       Block the push rather than discovering the leak later. Run the same check
       locally as a pre-commit hook.
     source: GitHub push protection
+    help: >-
+      Push protection is the difference between preventing a leak and responding to one:
+      blocked at the push, nothing was ever exposed and no rotation is needed. Running
+      the same scan as a pre-commit hook moves the feedback earlier still, so the bad
+      commit never exists locally either.
+    example:
+      lang: text
+      bad: |
+        leak found by a scanner 3 weeks later, in a public fork
+      good: |
+        $ git push
+          ! push declined: secret detected (aws-access-key-id)
 
   - id: signed-commits
     group: security
@@ -207,6 +474,19 @@ rules:
     body: >-
       Require verified signatures on the default branch so authorship cannot be
       forged.
+    help: >-
+      Author name and email in git are strings anyone can set, so an unsigned commit
+      proves nothing about who wrote it. Signatures matter most on the default branch,
+      which is what deploys: without them, an attacker who can push can also choose
+      whose name is on the change.
+    example:
+      lang: text
+      bad: |
+        $ git -c user.email=lead@example.com commit -m "..."
+          # attributed to someone else, indistinguishable
+      good: |
+        $ git commit -S -m "..."
+          Verified  ·  signature checks on protected branch
 
   - id: no-build-artifacts-committed
     group: security
@@ -215,6 +495,21 @@ rules:
     body: >-
       Keep them out with `.gitignore`. Committed artifacts bloat the clone
       forever and drift from the source that produced them.
+    help: >-
+      Git keeps every version of every file forever, so a committed binary is permanent
+      clone weight even after deletion. Artifacts also drift: the committed build and
+      the source that supposedly produced it diverge, and eventually someone debugs the
+      stale one. Keep them out with `.gitignore` and rebuild instead.
+    example:
+      lang: text
+      bad: |
+        node_modules/   ·  dist/   ·  app.jar (48 MB)
+          # clone is now 1.2 GB, permanently
+      good: |
+        .gitignore:
+          node_modules/
+          dist/
+          *.jar
 
   - id: pin-ci-actions
     group: security
@@ -224,3 +519,18 @@ rules:
       Reference a full commit SHA, not a moving tag, and grant the workflow the
       least permission it needs.
     source: OWASP GitHub Actions Security
+    help: >-
+      A tag is a moving pointer the action's author can repoint at any time, so trusting
+      one means giving that author the ability to change what runs in your pipeline
+      later. A commit SHA is immutable. Combine it with least-privilege permissions so
+      that even a compromised action cannot reach beyond what the job genuinely needs.
+    example:
+      lang: text
+      bad: |
+        - uses: some-org/deploy-action@v3
+          # v3 can be repointed at any commit, later
+      good: |
+        permissions:
+          contents: read
+        steps:
+          - uses: some-org/deploy-action@8f4b7c2e...   # v3.1.0

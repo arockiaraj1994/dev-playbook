@@ -6,6 +6,11 @@
 # Tokens are issued via POST /auth/login and managed in /dashboard/tokens.
 auth = true
 
+# If false, playbook_scaffold_standards is not advertised and refuses to run.
+# The read tools are unaffected. Useful on a shared instance where standards
+# are authored from the dashboard only.
+scaffold = true
+
 [admin]
 # Default admin credentials seeded on first run (when no users exist).
 # Override via MCP_ADMIN_USER and MCP_ADMIN_PASSWORD environment variables.

@@ -99,6 +99,16 @@ rules:
     default: true              # pre-ticked in the picker (default: true)
     locked: false              # true = cannot be unticked (implies default)
     source: OWASP C2           # optional attribution, shown in the rule table
+    help: >-                   # optional long-form help, wizard picker only
+      A secret in source is a secret in every clone, fork and CI log, and git
+      history keeps it long after the line is deleted.
+    example:                   # optional worked pair, wizard picker only
+      lang: python             # fence hint; defaults to the pack's language
+      caption: ...             # optional one-line framing
+      bad: |
+        STRIPE_KEY = "sk_live_4eC39Hq..."
+      good: |
+        STRIPE_KEY = os.environ["STRIPE_KEY"]
 ```
 
 ### Contributing
@@ -148,6 +158,28 @@ mid-level developer reads it once and knows what to do:
 
 A test enforces the length and word-count limits over every bundled pack.
 
+### Writing rule help
+
+`help` and `example` are **wizard-only**. They are shown in the rule picker's help
+popup and are never rendered into a generated document — `body` is what ships, and
+`source_hash` provenance depends on that output not moving. A byte-identity test
+enforces this.
+
+The popup falls back to the rule's own `body` when `help` is absent, so a pack
+without help still renders correctly; the affordance is never dead. Write:
+
+- **`help`** — two to four sentences answering what the rule means, what goes
+  wrong without it, and how to satisfy it. Say the failure mode concretely; that
+  is the part `body` has no room for.
+- **`example`** — the wrong way and the right way, as short as they can be while
+  still being real code. Either side may be omitted when only one is worth
+  showing. `lang` defaults to the pack's `language`; base-pack rules are
+  language-neutral, so they use `text` with pseudocode or shell.
+
+Coverage is enforced per pack: rules in `base`, `java`, `typescript` and `python`
+must all carry `help`. `go`, `kotlin` and `rust` are listed as exempt in
+`_PACKS_WITHOUT_HELP` in `tests/test_templates.py` until they are authored.
+
 ### The `label:` key
 
 `label:` is the short category name the wizard shows above a group of checkboxes —
@@ -188,6 +220,9 @@ A pack fails to load if:
 - a rule id is duplicated within the pack
 - a rule names a group the owner never declared *(checked at composition)*
 - a rule has a severity outside `hard`/`soft`, or no title
+- a rule's `help` is not a string
+- a rule declares an `example` that is not a mapping, or that sets neither
+  `bad` nor `good`
 - a rule file declares no groups or no rules
 - `merge` is not one of the two modes
 - the same path is produced by both a rule file and a plain doc

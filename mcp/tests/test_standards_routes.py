@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import base64
 import importlib
+import json
+import re
 import sys
 from pathlib import Path
 
@@ -301,8 +303,13 @@ async def test_delete_project_only_touches_that_project(app_admin) -> None:
     csrf = _login(client, "admin", "adminpw")
 
     await standards.upsert_file(
-        project="other", relative_path="AGENTS.md", kind="markdown",
-        title="Other", description="d", frontmatter="", body="y" * 100,
+        project="other",
+        relative_path="AGENTS.md",
+        kind="markdown",
+        title="Other",
+        description="d",
+        frontmatter="",
+        body="y" * 100,
         expected_version=None,
     )
 
@@ -359,7 +366,7 @@ async def test_wizard_step1_lists_every_language(app_admin) -> None:
 
     body = client.get("/dashboard/standards/new-project").text
     assert "New Project Standards" in body
-    for lang in ("java", "typescript", "kotlin"):
+    for lang in ("go", "java", "kotlin", "python", "rust", "typescript"):
         assert f'value="{lang}"' in body
     # Languages are checkboxes now, not a single-choice radio.
     assert 'type="checkbox" name="language"' in body
@@ -417,9 +424,7 @@ async def test_step_count_follows_the_language_selection(app_admin) -> None:
     one = _walk_to_step(client, csrf, RULES_BASE, languages=["java"]).text
     assert one.count("stepper-item") == 6
 
-    three = _walk_to_step(
-        client, csrf, RULES_BASE, languages=["java", "kotlin", "typescript"]
-    ).text
+    three = _walk_to_step(client, csrf, RULES_BASE, languages=["java", "kotlin", "typescript"]).text
     assert three.count("stepper-item") == 8
     for label in ("Java rules", "Kotlin rules", "TypeScript rules"):
         assert label in three
@@ -461,6 +466,53 @@ async def test_rule_categories_are_collapsed_with_friendly_names(app_admin) -> N
     for label in ("Everyday rules", "Architecture &amp; boundaries", "Common mistakes"):
         assert label in body
     assert "anti-patterns" not in body
+
+
+async def test_rule_rows_carry_a_help_trigger_and_payload(app_admin) -> None:
+    app, _ = app_admin
+    client = _client(app)
+    csrf = _login(client, "admin", "adminpw")
+
+    body = _walk_to_step(client, csrf, RULES_JAVA).text
+
+    assert 'class="rule-help-btn"' in body
+    assert 'id="rule-help-modal"' in body
+
+    payload = json.loads(
+        re.search(
+            r'<script type="application/json" id="rule-help-data">(.*?)</script>',
+            body,
+            re.DOTALL,
+        ).group(1)
+    )
+    rule = payload["java:no-raw-types"]
+    assert rule["title"]
+    assert rule["help"]
+    assert rule["doc_label"] == "Everyday rules"
+
+
+async def test_help_payload_uses_labels_not_document_paths(app_admin) -> None:
+    """The rendered page is asserted never to contain "anti-patterns".
+
+    Serialising a document's `doc` path rather than its display label would
+    reintroduce it through the JSON island.
+    """
+    app, _ = app_admin
+    client = _client(app)
+    csrf = _login(client, "admin", "adminpw")
+
+    body = _walk_to_step(client, csrf, RULES_JAVA).text
+    payload = json.loads(
+        re.search(
+            r'<script type="application/json" id="rule-help-data">(.*?)</script>',
+            body,
+            re.DOTALL,
+        ).group(1)
+    )
+
+    labels = {r["doc_label"] for r in payload.values()}
+    assert "Common mistakes" in labels
+    assert not any(".md" in label or "/" in label for label in labels)
 
 
 async def test_unknown_rule_step_is_404(app_admin) -> None:
@@ -633,9 +685,7 @@ async def test_collapsed_categories_still_submit_their_rules(app_admin) -> None:
             if found:
                 state[field] = list(dict.fromkeys(found))
 
-    r = client.post(
-        "/dashboard/standards/new-project/create", data=state, follow_redirects=False
-    )
+    r = client.post("/dashboard/standards/new-project/create", data=state, follow_redirects=False)
     assert r.status_code == 303
 
     # source_rule_ids records exactly which rules produced each document, so
@@ -690,6 +740,7 @@ async def test_wizard_duplicate_project_conflicts(app_admin) -> None:
         follow_redirects=False,
     )
     assert second.status_code == 409
+
 
 async def test_standard_new_view_offers_architecture_starter(app_admin) -> None:
     """The New-doc page ships a starter template for the required ARCHITECTURE.md."""

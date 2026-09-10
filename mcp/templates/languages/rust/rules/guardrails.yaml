@@ -1,0 +1,122 @@
+contributes_to: core/guardrails.md
+section: Rust
+
+rules:
+  - id: handle-every-result
+    group: must
+    severity: hard
+    locked: true
+    title: Handle every Result and Option
+    body: >-
+      Propagate with `?`, match it, or convert it - but never ignore it. A
+      `#[must_use]` warning is the compiler telling you a failure is about to
+      vanish.
+
+  - id: errors-are-typed
+    group: must
+    severity: hard
+    title: Give each failure mode its own error variant
+    body: >-
+      Libraries derive an error enum with `thiserror`; binaries add context with
+      `anyhow`. A caller should match on a variant, not parse a message.
+
+  - id: add-context-to-errors
+    group: must
+    severity: soft
+    title: Add context when an error crosses a layer
+    body: >-
+      `.context("charging payment")` at each hop turns one opaque line into a
+      readable chain. Add it where the operation is still known.
+
+  - id: safety-comment-on-unsafe
+    group: must
+    severity: hard
+    locked: true
+    title: Every unsafe block states why it is sound
+    body: >-
+      A `// SAFETY:` comment names the invariant that makes the block valid, the
+      block is as small as possible, and a safe wrapper hides it from callers.
+
+  - id: clippy-pedantic-clean
+    group: must
+    severity: hard
+    title: Keep clippy pedantic clean
+    body: >-
+      `cargo clippy --all-targets -- -D warnings` passes with `pedantic` on. An
+      `#[allow]` sits on the smallest scope and says why.
+
+  - id: pin-the-toolchain
+    group: must
+    severity: soft
+    title: Pin the toolchain in rust-toolchain.toml
+    body: >-
+      Without a pin, clippy findings and even compilation differ between a laptop
+      and CI, and the disagreement lands mid-review.
+
+  - id: audit-dependencies
+    group: must
+    severity: soft
+    title: Check advisories on every dependency change
+    body: >-
+      `cargo deny check` covers advisories, licences and duplicate versions.
+      Every added crate is code you now ship.
+    source: OWASP C2
+
+  - id: no-unwrap-in-src
+    group: must_not
+    severity: hard
+    locked: true
+    title: Never unwrap outside tests
+    body: >-
+      `unwrap` turns a recoverable error into a crash a caller can trigger. Use
+      `?`, or `expect` with a comment proving the invariant.
+
+  - id: no-panic-on-input
+    group: must_not
+    severity: hard
+    title: Never panic on data from outside
+    body: >-
+      A malformed request is an error to return. Indexing, `unwrap`, integer
+      division and `assert!` on external values are all panics waiting to happen.
+
+  - id: no-unsafe-without-review
+    group: must_not
+    severity: hard
+    locked: true
+    title: Don't add unsafe without a written reason
+    body: >-
+      The crate root sets `#![forbid(unsafe_code)]`. Removing it is a reviewed
+      decision recorded in `ARCHITECTURE.md`, not a local edit.
+
+  - id: no-blanket-allow
+    group: must_not
+    severity: soft
+    title: Don't silence a lint at the crate root
+    body: >-
+      A crate-wide `#![allow(...)]` disables the lint for code nobody has written
+      yet. Narrow it to the expression that needs it.
+
+  - id: no-blocking-in-async
+    group: must_not
+    severity: hard
+    title: Don't block inside an async function
+    body: >-
+      A blocking read, a `std::thread::sleep` or a sync driver stalls the whole
+      executor thread. Use the async client, or `spawn_blocking`.
+
+  - id: no-lock-across-await
+    group: must_not
+    severity: hard
+    title: Don't hold a std mutex across an await
+    body: >-
+      The guard is not `Send` and the lock outlives the poll, which deadlocks
+      under load. Release it first, or use the runtime's async mutex.
+
+  - id: no-secrets-in-debug
+    group: must_not
+    severity: hard
+    title: Don't derive Debug on a type holding a secret
+    body: >-
+      A derived `Debug` prints the token the first time anything logs the struct.
+      Implement it by hand and redact the field.
+    source: OWASP C9

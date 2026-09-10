@@ -23,6 +23,23 @@ rules:
     locked: true
     title: Change only what was asked
     body: One task, one change. No incidental refactors or "while I'm here" cleanups.
+    help: >-
+      A diff that does one thing can be reviewed, reverted and bisected. Mixing a
+      drive-by rename into a bug fix hides the fix inside noise, and when the change has
+      to be rolled back you lose the cleanup with it. Note the cleanup, finish the task,
+      then propose it separately.
+    example:
+      lang: text
+      bad: |
+        fix: correct tax rounding
+          4 files changed, 220 insertions
+          (the fix is 3 lines; the rest is a rename
+           and a switch to the new logging helper)
+      good: |
+        fix: correct tax rounding
+          1 file changed, 3 insertions
+        refactor: rename TaxCalc to TaxCalculator
+          4 files changed
 
   - id: read-before-write
     group: must
@@ -32,6 +49,21 @@ rules:
     body: >-
       Inspect the existing file before editing it. Match the prevailing naming,
       layout and patterns rather than introducing a second style.
+    help: >-
+      Code that ignores its surroundings is more expensive than code that is merely
+      imperfect: a second naming scheme or a second error-handling style means every
+      future reader has to learn both, and consistency checks stop being mechanical.
+      Read enough of the file to see what it already does, and follow it even where you
+      would have chosen differently.
+    example:
+      lang: text
+      bad: |
+        # file uses snake_case throughout
+        def getUserOrders(userId):   # a second convention arrives
+            ...
+      good: |
+        def get_user_orders(user_id):
+            ...
 
   - id: ask-dont-guess
     group: must
@@ -40,6 +72,22 @@ rules:
     body: >-
       If requirements are ambiguous - especially around data shape, public API
       or migration - ask before writing code.
+    help: >-
+      Guessing is cheap to write and expensive to unpick. A wrong assumption about a
+      data shape, a public signature or a migration path is not discovered at review
+      time; it is discovered once callers depend on it, when changing it costs a
+      coordinated release. A question costs minutes now against days later, so ask
+      before the code exists rather than after.
+    example:
+      lang: text
+      bad: |
+        # spec says "store the user's region"
+        region: str   # guessed: ISO country? city? sales territory?
+                      # three callers now depend on the guess
+      good: |
+        # ask first: "region" here means the sales territory
+        # code, from the fixed list in territories.yaml
+        territory: TerritoryCode
 
   - id: honesty-over-agreement
     group: must
@@ -48,6 +96,22 @@ rules:
     body: >-
       Do not affirm an incorrect assumption. If an approach is flawed, say so and
       offer the better one. If you do not know, say so.
+    help: >-
+      Agreeing with a flawed premise does not make it work; it just moves the failure
+      further from the person who could have caught it. Saying that an approach is
+      wrong, or that you do not know, is the more useful answer even when it is the less
+      comfortable one. Pair the objection with the better option so the exchange still
+      moves forward.
+    example:
+      lang: text
+      bad: |
+        "Yes, caching the token in a module-level global
+         works fine."
+          (it does not: the process serves several tenants)
+      good: |
+        "That breaks under multi-tenancy: the global is shared
+         across requests. Key the cache by tenant id, or hold
+         the token on the request context."
 
   - id: validate-external-input
     group: must
@@ -58,6 +122,21 @@ rules:
       Every value crossing a trust boundary is validated before use and rejected
       with a clear error rather than coerced silently.
     source: OWASP C3
+    help: >-
+      A trust boundary is where data stops being yours: request bodies, query strings,
+      headers, environment variables, file contents, another service's response.
+      Coercing a bad value silently turns a clear rejection at the edge into a confusing
+      failure deep in the call stack, or worse, a wrong result nobody notices. Validate
+      once, at the boundary, and reject loudly.
+    example:
+      lang: text
+      bad: |
+        limit = int(params.get("limit") or 0)   # "abc" -> ValueError 3 frames down
+        rows = db.fetch(limit=limit)            # -1 -> whole table
+      good: |
+        limit = parse_int(params.get("limit"), min=1, max=100, default=20)
+        # invalid input -> 400 with a clear message, at the edge
+        rows = db.fetch(limit=limit)
 
   - id: parameterized-queries
     group: must
@@ -68,6 +147,18 @@ rules:
       String concatenation or interpolation into a query is never acceptable,
       including in tests and migrations - use the driver's binding API.
     source: OWASP C3
+    help: >-
+      Bound parameters are not primarily a formatting nicety: they are what keeps a
+      value a value, so no input can ever be read as SQL. The habit only protects you if
+      it has no exceptions, which is why it applies in tests and migrations too. A
+      single interpolated string in a rarely run script is the one that gets found.
+    example:
+      lang: text
+      bad: |
+        db.execute(f"SELECT * FROM users WHERE email = '{email}'")
+        # email = "' OR '1'='1"  ->  every row
+      good: |
+        db.execute("SELECT * FROM users WHERE email = ?", [email])
 
   - id: fail-closed
     group: must
@@ -77,6 +168,27 @@ rules:
       On error, deny rather than allow. An authorization check that throws must
       not fall through to permitting the operation.
     source: OWASP C1
+    help: >-
+      Authorization code fails like any other code: the directory times out, the token
+      service is down, the claim is missing. If the error path falls through to the
+      permitted branch, an outage silently becomes an access-control bypass, and nothing
+      in the logs looks like a breach. Make the error path an explicit denial so the
+      worst outcome is an unavailable feature.
+    example:
+      lang: text
+      bad: |
+        try:
+            allowed = authz.can_edit(user, doc)
+        except AuthzError:
+            allowed = True      # "don't block people during an outage"
+        if allowed:
+            edit(doc)
+      good: |
+        try:
+            allowed = authz.can_edit(user, doc)
+        except AuthzError:
+            log.error("authz unavailable")
+            raise ServiceUnavailable   # deny, and say why
 
   - id: keep-dependencies-current
     group: must
@@ -86,6 +198,22 @@ rules:
       Pin versions in one place and update them deliberately. Do not add a
       dependency for something the standard library already covers.
     source: OWASP C6
+    help: >-
+      Every dependency is code you did not write but do ship, with its own
+      vulnerabilities and its own upgrade cost. Deferring upgrades does not avoid that
+      cost, it compounds it: a year of skipped minor versions becomes a major migration
+      under time pressure when a CVE lands. Pin in one place so the versions in use are
+      a fact rather than a guess, and prefer the standard library where it already does
+      the job.
+    example:
+      lang: text
+      bad: |
+        # versions scattered across three files, none pinned
+        # plus a 40 KB package for something the stdlib does
+        import leftpad
+      good: |
+        # one lockfile, exact versions, updated on a schedule
+        value.rjust(width, "0")
 
   - id: no-hardcoded-secrets
     group: must_not
@@ -97,6 +225,17 @@ rules:
       source, tests or committed configuration. Read them from the environment
       or a secret manager.
     source: OWASP C2
+    help: >-
+      A secret in source is a secret in every clone, every fork, every CI log and every
+      backup, and git history keeps it long after the line is deleted. Rotating it
+      becomes the only real remedy, which is why the rule covers tests and committed
+      config too: a test fixture holding a real staging key is still a leak.
+    example:
+      lang: text
+      bad: |
+        STRIPE_KEY = "sk_live_4eC39Hq..."   # now permanent in history
+      good: |
+        STRIPE_KEY = os.environ["STRIPE_KEY"]   # fails loudly if unset
 
   - id: no-pii-in-logs
     group: must_not
@@ -107,6 +246,19 @@ rules:
       Never log credentials, tokens, personal data or full request bodies. Log
       identifiers and outcomes instead.
     source: OWASP C9
+    help: >-
+      Logs travel further than the systems that write them: aggregators, third-party
+      search, screenshots in tickets, long retention. Anything logged is effectively
+      shared with everyone who can read the log, under retention rules the logging code
+      knows nothing about. Log the identifiers you need to trace a request and the
+      outcome you need to debug it, and leave the payload behind.
+    example:
+      lang: text
+      bad: |
+        log.info("login attempt %s", request.json)
+        # email, password and device fingerprint, retained 90 days
+      good: |
+        log.info("login attempt user=%s result=%s", user_id, result)
 
   - id: no-verbose-errors-to-callers
     group: must_not
@@ -116,6 +268,21 @@ rules:
       Return a stable, generic error and keep the detail in the log. Stack traces
       disclose internals to anyone who can trigger a failure.
     source: OWASP C3
+    help: >-
+      An error message reaches whoever can trigger the error, which for a public
+      endpoint is everyone. Stack traces, SQL fragments and file paths map out your
+      internals for free and turn a probe into reconnaissance. Return a stable generic
+      message plus a correlation id, and keep the detail where only you can read it.
+    example:
+      lang: text
+      bad: |
+        except Exception as e:
+            return {"error": str(e)}, 500
+        # "relation \"users_v2\" does not exist at /srv/app/db.py:88"
+      good: |
+        except Exception:
+            log.exception("lookup failed trace=%s", trace_id)
+            return {"error": "Internal error", "trace": trace_id}, 500
 
   - id: no-unreviewed-generated-code
     group: must_not
@@ -124,3 +291,24 @@ rules:
     body: >-
       Generated or copied code is your responsibility once committed. Read it,
       understand it, and check its licence before it lands.
+    help: >-
+      Committing code makes it yours regardless of where it came from: you will be the
+      one debugging it at 2am, and its licence becomes your licence obligation.
+      Generated and copied code is fine, unread generated and copied code is not. Read
+      it end to end, make sure you could have written it, and check what terms it
+      arrived under.
+    example:
+      lang: text
+      bad: |
+        # pasted from a snippet site, never read
+        # turns out to be GPL, and to swallow every exception
+        try:
+            ...
+        except:
+            pass
+      good: |
+        # read, understood, licence checked (MIT), narrowed
+        try:
+            ...
+        except TimeoutError:
+            raise UpstreamUnavailable from None

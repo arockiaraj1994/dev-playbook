@@ -1,0 +1,123 @@
+contributes_to: core/guardrails.md
+section: Go
+
+rules:
+  - id: handle-every-error
+    group: must
+    severity: hard
+    locked: true
+    title: Check every error a call returns
+    body: >-
+      An error is a return value like any other. Handle it, wrap it with `%w` and
+      return it, or state in a comment why it cannot happen.
+
+  - id: wrap-with-context
+    group: must
+    severity: hard
+    title: Add the operation when you return an error
+    body: >-
+      `fmt.Errorf("charge %s: %w", id, err)` turns a stack of anonymous failures
+      into one readable chain, and keeps `errors.Is` working.
+
+  - id: context-first-parameter
+    group: must
+    severity: hard
+    title: Pass a context to anything that can block
+    body: >-
+      `ctx context.Context` is the first parameter of every call that does I/O or
+      waits, and is propagated rather than replaced with `context.Background`.
+
+  - id: goroutines-have-an-owner
+    group: must
+    severity: hard
+    title: Know how every goroutine ends
+    body: >-
+      Whoever starts a goroutine knows what stops it - a context, a closed
+      channel, or an `errgroup`. A goroutine nobody waits for is a leak.
+
+  - id: run-tests-with-race
+    group: must
+    severity: hard
+    title: Run the test suite with the race detector
+    body: >-
+      `go test -race ./...` is the gate. A data race found in production costs
+      several orders of magnitude more than one found here.
+
+  - id: gofmt-everything
+    group: must
+    severity: hard
+    locked: true
+    title: Commit only gofmt-formatted code
+    body: >-
+      `gofmt` decides layout so reviews can be about behaviour. `gofmt -l .` must
+      print nothing.
+
+  - id: no-panic-in-library-code
+    group: must_not
+    severity: hard
+    locked: true
+    title: Never panic on bad input
+    body: >-
+      A malformed request is an error to return, not a crash. Reserve `panic` for
+      an invariant that is already broken, and only in `main`.
+
+  - id: no-ignored-errors
+    group: must_not
+    severity: hard
+    title: Don't discard an error with an underscore
+    body: >-
+      `_ = doThing()` hides a failure that will surface later as wrong data. If it
+      is genuinely safe, say why in a comment on the line.
+
+  - id: no-string-error-comparison
+    group: must_not
+    severity: hard
+    title: Don't compare errors by their message
+    body: >-
+      `err.Error() == "not found"` breaks the moment a wrapper adds context. Use
+      `errors.Is` for values and `errors.As` for types.
+
+  - id: no-context-in-structs
+    group: must_not
+    severity: soft
+    title: Don't store a context in a struct field
+    body: >-
+      A stored context outlives the request it belonged to, so cancellation stops
+      working. Pass it as a parameter.
+
+  - id: no-shell-string-exec
+    group: must_not
+    severity: hard
+    locked: true
+    title: Never build a command line from a string
+    body: >-
+      `exec.Command("sh", "-c", input)` is command injection. Pass the program and
+      its arguments as separate values.
+    source: OWASP C4
+
+  - id: no-concatenated-sql
+    group: must_not
+    severity: hard
+    locked: true
+    title: Don't build queries with fmt.Sprintf
+    body: >-
+      Use placeholders and pass the values as arguments. Formatting a value into
+      SQL is injection waiting for the right input.
+    source: OWASP C3
+
+  - id: no-init-side-effects
+    group: must_not
+    severity: hard
+    title: Keep work out of init functions
+    body: >-
+      An `init` that reads config, dials a connection or registers a global makes
+      import order load-bearing and the package untestable. Do it in `main`.
+
+  - id: no-naked-returns
+    group: must_not
+    severity: soft
+    title: Don't return named values implicitly
+    body: >-
+      A naked `return` in anything longer than a few lines forces the reader to
+      hunt for what is actually returned. Name results for documentation, then
+      return them explicitly.

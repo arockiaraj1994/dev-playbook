@@ -57,6 +57,21 @@ class TemplateError(Exception):
 
 
 @dataclass(frozen=True)
+class RuleExample:
+    """A worked do/don't pair shown in the wizard's rule help popup.
+
+    Either side may be empty - some rules only have a wrong way worth showing,
+    others only a right one - but a pack that declares an example must fill in
+    at least one of them.
+    """
+
+    lang: str = ""  # code-fence hint: "java", "python", "text" for pseudocode
+    bad: str = ""
+    good: str = ""
+    caption: str = ""
+
+
+@dataclass(frozen=True)
 class Rule:
     id: str  # namespaced: "<pack>:<local id>"
     local_id: str
@@ -68,6 +83,12 @@ class Rule:
     default: bool = True
     locked: bool = False
     source: str = ""
+    # Long-form help, shown only in the wizard's rule picker. Never rendered
+    # into a generated document: `body` is what ships, and `source_hash`
+    # provenance depends on that output not moving. Named help_text rather
+    # than help so the YAML key can stay `help:` without shadowing the builtin.
+    help_text: str = ""
+    example: RuleExample | None = None
 
 
 @dataclass(frozen=True)
@@ -176,7 +197,50 @@ def _as_bool(value: object, default: bool) -> bool:
     return default if value is None else bool(value)
 
 
-def _parse_rules(entries: list, pack_id: str, known_groups: set[str], where: Path) -> list[Rule]:
+def _parse_help(value: object, local_id: str, where: Path) -> str:
+    if value is None:
+        return ""
+    if not isinstance(value, str):
+        raise TemplateError(f"{where}: rule '{local_id}' has a non-string 'help'")
+    return value.strip()
+
+
+def _parse_example(
+    value: object, local_id: str, where: Path, default_lang: str
+) -> RuleExample | None:
+    """Parse a rule's optional do/don't example.
+
+    An absent example is fine - the wizard falls back to the rule's own body -
+    but a declared one that shows neither side is an authoring mistake worth
+    failing the load for, since it renders as an empty popup section.
+    """
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise TemplateError(f"{where}: rule '{local_id}' has an 'example' that is not a mapping")
+
+    bad = str(value.get("bad", "") or "").rstrip()
+    good = str(value.get("good", "") or "").rstrip()
+    if not bad and not good:
+        raise TemplateError(
+            f"{where}: rule '{local_id}' has an 'example' with neither 'bad' nor 'good'"
+        )
+
+    return RuleExample(
+        lang=str(value.get("lang", "") or "").strip() or default_lang,
+        bad=bad,
+        good=good,
+        caption=str(value.get("caption", "") or "").strip(),
+    )
+
+
+def _parse_rules(
+    entries: list,
+    pack_id: str,
+    known_groups: set[str],
+    where: Path,
+    default_lang: str = "text",
+) -> list[Rule]:
     rules: list[Rule] = []
     for entry in entries or []:
         if not isinstance(entry, dict):
@@ -208,6 +272,8 @@ def _parse_rules(entries: list, pack_id: str, known_groups: set[str], where: Pat
                 default=True if locked else _as_bool(entry.get("default"), True),
                 locked=locked,
                 source=str(entry.get("source", "")).strip(),
+                help_text=_parse_help(entry.get("help"), local, where),
+                example=_parse_example(entry.get("example"), local, where, default_lang),
             )
         )
     if not rules:
@@ -215,7 +281,7 @@ def _parse_rules(entries: list, pack_id: str, known_groups: set[str], where: Pat
     return rules
 
 
-def _load_rule_file(path: Path, pack_id: str) -> RuleDoc | Contribution:
+def _load_rule_file(path: Path, pack_id: str, default_lang: str = "text") -> RuleDoc | Contribution:
     raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     if not isinstance(raw, dict):
         raise TemplateError(f"{path}: expected a mapping at the top level")
@@ -226,7 +292,7 @@ def _load_rule_file(path: Path, pack_id: str) -> RuleDoc | Contribution:
         return Contribution(
             contributes_to=str(raw["contributes_to"]).strip(),
             section=str(raw.get("section", pack_id)).strip(),
-            rules=_parse_rules(raw.get("rules"), pack_id, set(), path),
+            rules=_parse_rules(raw.get("rules"), pack_id, set(), path, default_lang),
             section_intro=str(raw.get("section_intro", "") or ""),
             section_outro=str(raw.get("section_outro", "") or ""),
         )
@@ -252,7 +318,7 @@ def _load_rule_file(path: Path, pack_id: str) -> RuleDoc | Contribution:
         title=str(raw.get("title", doc)),
         description=str(raw.get("description", "")),
         groups=groups,
-        rules=_parse_rules(raw.get("rules"), pack_id, {g.id for g in groups}, path),
+        rules=_parse_rules(raw.get("rules"), pack_id, {g.id for g in groups}, path, default_lang),
         merge=merge,
         intro=str(raw.get("intro", "") or ""),
         outro=str(raw.get("outro", "") or ""),
@@ -317,7 +383,7 @@ def _load_pack(manifest_path: Path) -> Pack:
     rules_dir = root / "rules"
     if rules_dir.is_dir():
         for path in sorted(rules_dir.glob("*.yaml")):
-            loaded = _load_rule_file(path, pack.id)
+            loaded = _load_rule_file(path, pack.id, pack.language or "text")
             if isinstance(loaded, Contribution):
                 pack.contributions.append(loaded)
             else:
@@ -608,8 +674,9 @@ def _render_by_language(m: _Merged, selected: set[str], values: dict[str, str]) 
 def computed_values(base: Pack, languages: list[Pack]) -> dict[str, str]:
     """Placeholders derived from the selection rather than supplied by the user."""
     gates = "\n".join(f"bash {p.gate}" for p in languages)
-    language_rows = "\n".join(f"| {p.title} {p.language_version} | `#{p.title.lower()}` |"
-                              for p in languages)
+    language_rows = "\n".join(
+        f"| {p.title} {p.language_version} | `#{p.title.lower()}` |" for p in languages
+    )
     doc_rows = "\n".join(
         f"| {p.title} | `languages/{p.language}/standards.md`, "
         f"`languages/{p.language}/testing.md`, "
@@ -660,9 +727,7 @@ def compose(
         for w in base.workflows
         if w.id in chosen_workflows
     ]
-    values["workflow_rows"] = "\n".join(
-        ["| Trigger phrase | Document |", "| --- | --- |", *rows]
-    )
+    values["workflow_rows"] = "\n".join(["| Trigger phrase | Document |", "| --- | --- |", *rows])
 
     merged = _collect(base, languages)
     out: list[RenderedDoc] = []

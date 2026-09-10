@@ -1,12 +1,11 @@
 """
 server.py - Dev Playbook MCP Server (SSE only).
 
-The three playbook_* tools that served the standards corpus were removed in
-v1.0.0. What remains is the server skeleton: SSE transport, local auth,
-dashboard sessions and usage metrics - a base to build a new tool surface on.
-The MCP server currently advertises no tools. (The dashboard's Standards page
-reads its corpus from SQLite via standards_store.py / standards_scanner.py -
-admins edit it live from the dashboard; it does not back any MCP tool.)
+Serves five playbook_* tools over SSE, backed by the SQLite standards store:
+scaffolding a project's standards from the template packs, then reading them
+back. The tools live in tools/, one module per tool, each exporting
+DEFINITIONS and dispatch; this module concatenates and routes them. The
+dashboard edits the same store live.
 
 Run:
   uv run server.py
@@ -20,6 +19,7 @@ Auth model:
 
 Config (optional): config.toml next to server.py, or path in MCP_CONFIG.
   [enable] auth - default false.
+  [enable] scaffold - default true. False hides playbook_scaffold_standards.
   [admin] username / password - default admin (seeded on first run).
   Refuses to start with default admin/admin when MCP_HOST=0.0.0.0.
 
@@ -75,6 +75,12 @@ from identity import (
 from metrics import MetricsStore, summarize_args
 from session import DashboardSession
 from standards_store import StandardsStore
+from tools import common as tools_common
+from tools import find as _find_mod
+from tools import get as _get_mod
+from tools import scaffold as _scaffold_mod
+from tools import start as _start_mod
+from tools import templates as _templates_mod
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -88,7 +94,7 @@ logging.basicConfig(
 logger = logging.getLogger("dev-playbook")
 
 SERVER_LABEL = os.getenv("MCP_SERVER_LABEL", "dev-playbook")
-SERVER_VERSION = "1.0.0"
+SERVER_VERSION = "1.1.0"
 DEFAULT_PORT = 3000
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_INACTIVE_DAYS = 2
@@ -98,6 +104,7 @@ _DEFAULT_DB_REL = Path("data") / "metrics.db"
 # _record_call (also module-scoped) read this through the module global rather
 # than a closure.
 metrics_store: MetricsStore | None = None
+standards_store: StandardsStore | None = None
 
 # ---------------------------------------------------------------------------
 # MCP Server
@@ -106,10 +113,30 @@ metrics_store: MetricsStore | None = None
 server = Server(SERVER_LABEL)
 
 
+# Order is the order a client sees them, so the entry point comes first and
+# the write tool sits next to the catalog it depends on.
+_TOOL_MODULES = (
+    _start_mod,
+    _get_mod,
+    _find_mod,
+    _templates_mod,
+    _scaffold_mod,
+)
+
+
 @server.list_tools()
 async def list_tools() -> list[Tool]:
-    """No tools yet - the playbook surface was removed in v1.0.0."""
-    return []
+    tools: list[Tool] = []
+    for module in _TOOL_MODULES:
+        if module is _scaffold_mod and not tools_common.POLICY.scaffold_enabled:
+            continue
+        for tool in module.DEFINITIONS:
+            # A client that sees no annotations is entitled to assume the worst,
+            # so nothing goes out unannotated.
+            if tool.annotations is None:
+                tool = tool.model_copy(update={"annotations": tools_common.READ_ONLY})
+            tools.append(tool)
+    return tools
 
 
 @dataclass
@@ -122,8 +149,16 @@ class _CallContext:
 
 
 async def _dispatch_typed(name: str, arguments: dict, ctx: _CallContext) -> list[TextContent]:
+    if standards_store is None:
+        ctx.status = "error"
+        return [TextContent(type="text", text="Standards store is not ready.")]
+    for module in _TOOL_MODULES:
+        result = await module.dispatch(name, arguments, ctx, standards_store)
+        if result is not None:
+            return result
     ctx.status = "error"
-    return [TextContent(type="text", text=f"Unknown tool: {name}")]
+    known = ", ".join(t.name for m in _TOOL_MODULES for t in m.DEFINITIONS)
+    return [TextContent(type="text", text=f"Unknown tool: {name}. Available: {known}")]
 
 
 async def dispatch_tool(name: str, arguments: dict) -> list[TextContent]:
@@ -220,6 +255,8 @@ def _editor_from_scope(scope: Scope) -> EditorInfo:
 @dataclass(frozen=True)
 class McpConfig:
     auth_enabled: bool = False
+    # Lets a shared instance offer the read tools without the write one.
+    scaffold_enabled: bool = True
     admin_username: str = "admin"
     admin_password: str = "admin"
 
@@ -257,14 +294,22 @@ def load_mcp_config() -> McpConfig:
     )
     return McpConfig(
         auth_enabled=bool(enable.get("auth", False)),
+        scaffold_enabled=bool(enable.get("scaffold", True)),
         admin_username=admin_username,
         admin_password=admin_password,
     )
 
 
 SERVER_INSTRUCTIONS = (
-    "Dev Playbook server. This instance advertises no tools - the standards "
-    "surface was removed in v1.0.0 and a new one has not been added yet."
+    "Dev Playbook serves a team's coding standards: guardrails, definition of "
+    "done, per-language rules and task workflows.\n\n"
+    "Before writing or changing code in a project that has standards here, call "
+    "playbook_start_task(project, intent) - it returns the guardrails and the "
+    "workflow for what you are about to do. Follow the refs it prints through "
+    "playbook_get_standard; search with playbook_find_standards.\n\n"
+    "If the codebase has no standards project yet, call playbook_list_templates "
+    "and then playbook_scaffold_standards to create one. Preview it with "
+    "dry_run=true and get the user's agreement before writing."
 )
 
 
@@ -457,8 +502,15 @@ class AppDeps:
 
 
 def build_app(deps: AppDeps) -> Starlette:
-    global metrics_store
+    global metrics_store, standards_store
     metrics_store = deps.metrics
+    # The MCP `Server` is module-scoped, so tool dispatch reaches app state
+    # through module globals rather than a closure - same reason as metrics.
+    standards_store = deps.standards
+    tools_common.set_policy(
+        scaffold_enabled=deps.cfg.scaffold_enabled,
+        auth_enabled=deps.cfg.auth_enabled,
+    )
 
     sse = deps.sse_transport or SseServerTransport("/messages/")
     deps.sse_transport = sse

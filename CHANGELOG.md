@@ -8,6 +8,119 @@ changes after 1.0.0 will bump the **major**.
 
 ## [Unreleased]
 
+### Added - v1.1.0 - the MCP tool surface is back, scaffolding-first
+
+- **Five `playbook_*` tools.** `list_tools()` has returned `[]` since v1.0.0;
+  it now advertises `playbook_start_task`, `playbook_get_standard`,
+  `playbook_find_standards`, `playbook_list_templates` and
+  `playbook_scaffold_standards`. Naming is `<verb>_<resource>` behind the
+  `playbook_` namespace.
+- **`playbook_scaffold_standards` is the headline.** An agent in a repo with no
+  standards can generate a full set from the template packs. It contains no
+  scaffolding logic of its own - it calls `scaffold_service.py`, the same
+  function the dashboard wizard calls, and a test diffs the two resulting
+  stores to prove they cannot drift.
+- **`playbook_list_templates` is split out of it deliberately.** The pack
+  catalog is discovery data; folding it into the scaffold tool's description
+  would spend those tokens in every conversation. As its own tool it is a
+  round-trip paid only when something actually needs bootstrapping.
+- **`dry_run=true`** renders the manifest and writes nothing, so an agent can
+  show the user what it would create before it creates it.
+- **Every tool declares MCP annotations** (`readOnlyHint`, `destructiveHint`,
+  `idempotentHint`, `openWorldHint`). Scaffolding is additive but not
+  idempotent, so a client confirms before calling it. A client that sees no
+  annotations is entitled to assume the worst, so none go out bare.
+- **Every error carries a next move.** An unknown language lists the valid ids;
+  a missing placeholder says where in the codebase to find it; an unresolvable
+  ref lists the project's actual documents; scaffolding over an existing
+  project says the store never merges and points at the read tools.
+- **`mcp/tools/` module layout.** One module per tool, each exporting
+  `DEFINITIONS` + `dispatch`; `server.py` concatenates and routes them. New
+  `tools/refs.py` holds the ref grammar and `tools/common.py` the shared
+  annotations, argument coercion and Next Calls renderer.
+
+### Changed - v1.1.0
+
+- **The `ref` grammar is the relative path**, plus aliases (`guardrails`,
+  `workflow:bug-fix`, `gate:...`). The v0.8.0 grammar (`pattern:x`,
+  `language:kotlin/testing`) addressed a filesystem corpus that no longer
+  exists; storage is `standards_files(project, relative_path)`. A test asserts
+  every ref the tools print resolves back to the row it names.
+- **`playbook_start_task` composes `get.render_ref`** for its guardrails and
+  workflow bodies, with a byte-identity test. Issue #380 found this exact
+  duplication had crept back twice, because earlier passes merged tool *names*
+  without merging their *renderers*.
+- **`find` scores in Python** over `store.list_files()`. BM25 went with the
+  v1.0.0 cut and a project is ~25 documents; FTS5 is the escalation if corpora
+  grow, not now.
+- **`metrics._LEGACY_TOOL_MAP` retargeted** onto the new names, and the v0.8/0.9
+  three (`playbook_start` / `_get` / `_find`) added as sources. Recorded calls
+  are history and must not be orphaned, so the map only ever grows.
+- **`[enable] scaffold`** (default true) in `config.toml`. False hides the write
+  tool and refuses it; the read tools are unaffected. With auth enabled,
+  scaffolding also requires an admin token - with auth disabled every principal
+  is `role="user"`, so an unconditional admin gate would lock the tool out of
+  the default local config entirely.
+- Dashboard setup page's "verify it works" steps now describe the real flow.
+- README rewritten around the surface; it had described a tool-less skeleton and
+  claimed 112 tests. `docker-compose.yml` image tag corrected from `0.8.0`.
+- Tests: 522 → 601.
+
+### Added - per-rule help popups in the create-standards wizard
+
+- **Every rule row in the wizard now has a help affordance.** The picker asks a
+  user to accept or reject 290 rules from one compressed sentence each; that
+  sentence cannot be lengthened, because `_bullet()` writes it verbatim into the
+  generated markdown. Rules now also carry `help:` (two to four sentences on what
+  goes wrong without the rule) and `example:` (a do/don't pair), shown in a modal.
+- **Placement is a hover-revealed glyph in a right-hand gutter**, invisible until
+  the row is hovered or focused and pinned visible on touch, so 50+ rows do not
+  become a wall of icons. It uses `opacity` rather than `display`, so it stays
+  focusable and in the accessibility tree while invisible.
+- **The icon is never dead.** With no authored help the modal falls back to the
+  rule's title, severity, id, source, full body and target document.
+- **Help never reaches the generated markdown.** It is authoring metadata for the
+  picker only - not merely to save the agent's context, but because `source_hash`
+  provenance means any change to the generated bullet invalidates every stored
+  document's hash. A byte-identity test pins this.
+- **Content authored for `base`, `java`, `typescript` and `python`** (161 rules).
+  `go`, `kotlin` and `rust` run on the fallback and are listed as exempt in
+  `_PACKS_WITHOUT_HELP`, so a coverage test stops the authored packs regressing.
+
+### Changed - per-rule help popups
+
+- `rule_row` in `_wizard.html` is a `<div>` with an inner `<label>` rather than a
+  `<label>` wrapping everything: a `<button>` inside a `<label>` activates that
+  label, so a nested help trigger would have toggled the checkbox on every click.
+- The modal CSS moved from page-scoped `.sd-modal-*` in `standard_detail.css` to
+  a shared `.modal-*` component in `style.css`, since the wizard does not load
+  that sheet. `standard_detail.html`/`.js` updated to the new class names.
+- The wizard's inline expand/collapse-all script moved into a new
+  `dashboard/static/wizard_rules.js` alongside the dialog behaviour.
+
+### Added - Python, Go and Rust template packs
+- **Three new language packs** under `mcp/templates/languages/`, authored
+  against `mcp/templates/TEMPLATE_SPEC.md` and matching the breadth of the
+  existing java/kotlin/typescript packs (standards, testing, two patterns,
+  anti-patterns, and contributions into guardrails / definition-of-done /
+  architecture, plus a gate script):
+  - **python** (3.12) - ruff + `mypy --strict`, `src/` layout and PEP 621,
+    pytest, and the Bandit/OWASP vulnerability classes (`pickle`,
+    `yaml.load`, `shell=True`, `eval`/`exec`, f-string SQL). Placeholder:
+    `python_package`. Gate: format → lint → types → tests.
+  - **go** (1.23) - Effective Go and the Google Go Style Guide,
+    consumer-defined interfaces, `%w` error wrapping, table-driven tests.
+    Placeholder: `module`. Gate: gofmt → vet → staticcheck → `test -race` →
+    govulncheck.
+  - **rust** (1.85) - Rust API Guidelines, `clippy::pedantic`,
+    `thiserror`/`anyhow`, `#![forbid(unsafe_code)]`, async cancellation and
+    lock-across-await rules. Placeholder: `crate`. Gate: fmt → clippy → test
+    → doc → cargo-deny.
+- The wizard's template-values step now carries a per-placeholder example
+  (`python_package`, `module`, `crate` alongside `package`).
+- Tests: `LANGUAGE_IDS` grows to six languages, so the combination matrix
+  covers all 63 selections rather than 7; 242 → 522 tests.
+
 ### Added - dashboard standards module (post-v1.0.0)
 - **Rebuilt the Standards/Projects dashboard page** as a lightweight,
   self-contained module: `mcp/standards_scanner.py` reads `standards/`

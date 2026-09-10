@@ -2006,16 +2006,142 @@ html, body { overflow-x: hidden; }
   color: var(--text-muted);
   margin-bottom: .5rem;
 }
+/* The wizard rule row. Redefines .rule-row from the scanner catalog list
+   above (:1543) - that one is a grid and is scoped to the standards detail
+   page, this flex one wins globally. */
 .rule-row {
   display: flex;
-  gap: .625rem;
   align-items: flex-start;
   padding: .5rem 0;
   border-top: 1px solid var(--border);
+}
+.rule-label {
+  display: flex;
+  gap: .625rem;
+  align-items: flex-start;
+  flex: 1;
+  min-width: 0;
   cursor: pointer;
 }
 .rule-row input[type="checkbox"] { margin-top: .25rem; flex-shrink: 0; }
 .rule-row input:disabled { cursor: not-allowed; }
+
+/* Help affordance. Quiet by default so 50+ rows do not read as a wall of
+   icons; opacity rather than display/visibility keeps it focusable and in the
+   accessibility tree while invisible. */
+.rule-help-btn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin-left: .5rem;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-subtle);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity .12s ease, color .12s ease, background .12s ease;
+}
+.rule-row:hover .rule-help-btn,
+.rule-row:focus-within .rule-help-btn,
+.rule-help-btn:focus-visible { opacity: 1; }
+.rule-help-btn:hover { color: var(--accent-600); background: var(--bg-hover); }
+.rule-help-btn:focus-visible {
+  outline: 2px solid var(--accent-500);
+  outline-offset: 1px;
+}
+/* Touch devices never hover, so the glyph has to stay reachable. */
+@media (hover: none) {
+  .rule-help-btn { opacity: .55; }
+}
+
+/* Rule help dialog body (the shell comes from the shared .modal-* block). */
+.rule-help-panel { max-width: 680px; }
+.rule-help-heading { min-width: 0; }
+.rule-help-heading h2 {
+  margin: 0;
+  font-size: .9375rem;
+  font-weight: 600;
+  color: var(--text);
+}
+.rule-help-meta {
+  margin-top: .2rem;
+  font-size: .6875rem;
+  color: var(--text-subtle);
+  font-family: var(--font-mono);
+}
+.rule-help-prose {
+  margin: 0;
+  font-size: .8125rem;
+  line-height: 1.6;
+  color: var(--text);
+}
+.rule-help-rule-text {
+  margin: .625rem 0 0;
+  padding-left: .75rem;
+  border-left: 2px solid var(--border);
+  font-size: .75rem;
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+.rule-help-caption {
+  margin: 1rem 0 0;
+  font-size: .75rem;
+  color: var(--text-muted);
+}
+.rule-help-example {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: .75rem;
+  margin-top: .875rem;
+}
+.rule-help-example.is-single { grid-template-columns: 1fr; }
+@media (max-width: 640px) {
+  .rule-help-example { grid-template-columns: 1fr; }
+}
+.rule-help-col-label {
+  margin-bottom: .3rem;
+  font-size: .6875rem;
+  font-weight: 600;
+  letter-spacing: .03em;
+}
+.rule-help-col-bad .rule-help-col-label { color: var(--red-700); }
+.rule-help-col-good .rule-help-col-label { color: var(--green-700); }
+.rule-help-code {
+  margin: 0;
+  padding: .625rem .75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: .75rem;
+  line-height: 1.5;
+  color: var(--text);
+  white-space: pre;
+}
+.rule-help-col-bad .rule-help-code { border-color: var(--red-100); }
+.rule-help-col-good .rule-help-code { border-color: var(--green-100); }
+.rule-help-lands {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  margin: 1.125rem 0 0;
+  padding-top: .75rem;
+  border-top: 1px solid var(--border);
+  font-size: .75rem;
+  color: var(--text-muted);
+}
+.rule-help-lands-label {
+  font-size: .6875rem;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--text-subtle);
+}
 .rule-body { display: block; }
 .rule-title { font-size: .8125rem; font-weight: 600; margin-right: .35rem; }
 .rule-text {
@@ -2295,3 +2421,65 @@ html, body { overflow-x: hidden; }
 .rule-cat-body { padding: .25rem 1.25rem 1rem; }
 .rule-cat-body .rule-group-title { margin-top: 1rem; }
 .rule-cat-body .rule-row:first-of-type { border-top: none; }
+
+/* --- Modal dialog (shared) ----------------------------------------------- */
+/* Promoted out of standard_detail.css so the create-standards wizard, which
+   does not load that page-scoped sheet, can reuse the same dialog. */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6vh 16px;
+}
+.modal-overlay[hidden] { display: none; }
+
+.modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(10, 15, 30, 0.45);
+}
+
+.modal-panel {
+  position: relative;
+  width: 100%;
+  max-width: 860px;
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-elevated, var(--surface, #fff));
+  border: 1px solid var(--border-strong, var(--border, #e5e7eb));
+  border-radius: var(--radius-lg, 12px);
+  box-shadow: var(--shadow-pop, 0 20px 60px rgba(0, 0, 0, 0.18));
+  overflow: hidden;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border, #e5e7eb);
+  flex-shrink: 0;
+}
+
+.modal-close {
+  border: none;
+  background: transparent;
+  font-size: 1.25rem;
+  line-height: 1;
+  color: var(--text-muted, #6b7280);
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+.modal-close:hover { background: var(--bg-hover, #f3f4f6); color: var(--text); }
+
+.modal-body {
+  padding: 16px;
+  overflow-y: auto;
+}

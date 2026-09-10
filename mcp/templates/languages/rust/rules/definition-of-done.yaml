@@ -1,0 +1,36 @@
+contributes_to: core/definition-of-done.md
+section: Rust
+
+rules:
+  - id: dod-fmt-and-clippy
+    group: mechanical
+    severity: hard
+    title: cargo fmt and clippy report nothing
+    body: >-
+      `cargo fmt --all -- --check` and `cargo clippy --all-targets -- -D warnings`
+      both pass, with no new `#[allow]` added to get there.
+
+  - id: dod-tests-all-features
+    group: mechanical
+    severity: hard
+    title: Tests pass with all features enabled
+    body: >-
+      `cargo test --all-features` is green. A feature-gated path that nobody
+      compiles is a path nobody tests.
+
+  - id: dod-public-items-documented
+    group: correctness
+    severity: soft
+    title: Public items have doc comments
+    body: >-
+      Every public item has a `///` comment, and `cargo doc` builds without
+      warnings. Doc examples compile and run, so they cannot rot.
+
+  - id: dod-cargo-deny
+    group: security
+    severity: soft
+    title: cargo deny reports no advisory
+    body: >-
+      Advisories, licences and duplicate versions are clean, or the exception is
+      recorded with an expiry date.
+    source: OWASP C2

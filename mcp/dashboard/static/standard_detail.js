@@ -64,7 +64,7 @@
 
   var modal = document.getElementById("file-modal");
   var modalTitle = document.getElementById("file-modal-title");
-  var modalBody = modal ? modal.querySelector(".sd-modal-body") : null;
+  var modalBody = modal ? modal.querySelector(".modal-body") : null;
   var lastFocus = null;
 
   function activateTabs(card, body) {
@@ -199,7 +199,7 @@
     activateTabs(card, modalBody);
 
     modal.hidden = false;
-    var closeBtn = modal.querySelector(".sd-modal-close");
+    var closeBtn = modal.querySelector(".modal-close");
     if (closeBtn) closeBtn.focus();
   }
 
@@ -218,8 +218,8 @@
   });
 
   if (modal) {
-    var backdrop = modal.querySelector(".sd-modal-backdrop");
-    var closeBtn = modal.querySelector(".sd-modal-close");
+    var backdrop = modal.querySelector(".modal-backdrop");
+    var closeBtn = modal.querySelector(".modal-close");
     if (backdrop) backdrop.addEventListener("click", closeModal);
     if (closeBtn) closeBtn.addEventListener("click", closeModal);
     document.addEventListener("keydown", function (e) {

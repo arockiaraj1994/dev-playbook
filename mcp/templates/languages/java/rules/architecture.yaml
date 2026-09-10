@@ -42,6 +42,32 @@ rules:
     body: >-
       `domain` must not import a web, persistence, serialization or
       dependency injection framework. It depends on the JDK and on itself.
+    help: >-
+      A domain that imports a framework can only be tested by starting that framework,
+      so the fastest tests in the codebase become the slowest. It also ties your
+      business rules to a library's upgrade cycle: a major Spring or Jackson release
+      becomes a domain change. Keep the domain on the JDK and let the adapters carry the
+      annotations.
+    example:
+      bad: |
+        package com.acme.domain;
+
+        @Entity
+        @Table(name = "orders")
+        public class Order {
+            @Id @GeneratedValue private Long id;
+            @JsonProperty("status") private Status status;
+        }
+      good: |
+        package com.acme.domain;
+
+        public final class Order {          // plain Java, no imports
+            private final OrderId id;
+            private Status status;
+        }
+
+        // adapter/out/persistence/OrderEntity.java carries @Entity
+        // and maps to and from Order
 
   - id: dependencies-point-inward
     group: dependency
@@ -52,6 +78,20 @@ rules:
       `adapter` may depend on `application`; `application` may depend on
       `domain`. Never the reverse. `domain` depends on nothing in this
       project.
+    help: >-
+      The direction is what lets the domain be reused and tested in isolation: it
+      compiles with nothing else in the project present. Once the domain reaches outward
+      for a repository interface or a DTO, that isolation is gone and the layering is
+      decorative. Invert instead, with the interface declared inward and implemented
+      outward.
+    example:
+      lang: text
+      bad: |
+        adapter  ->  application  ->  domain
+                         domain    ->  adapter    # for one DTO
+      good: |
+        adapter  ->  application  ->  domain
+                                      domain -> (nothing)
 
   - id: adapters-do-not-depend-on-adapters
     group: dependency
@@ -60,6 +100,32 @@ rules:
     body: >-
       An inbound adapter must not import an outbound adapter, or vice versa.
       They communicate only through the application layer.
+    help: >-
+      A controller calling a repository directly skips the layer that owns the use case,
+      so the transaction boundary, the authorization check and the business rules are
+      all bypassed at once. It also means the behaviour cannot be reused by another
+      entry point, since it now lives inside an HTTP handler.
+    example:
+      bad: |
+        @RestController
+        class OrderController {
+            private final OrderJpaRepository repo;   // outbound adapter
+
+            @PostMapping("/orders")
+            Order create(@RequestBody OrderRequest r) {
+                return repo.save(new OrderEntity(r));   // no use case at all
+            }
+        }
+      good: |
+        @RestController
+        class OrderController {
+            private final PlaceOrder placeOrder;      // application layer
+
+            @PostMapping("/orders")
+            OrderResponse create(@RequestBody OrderRequest r) {
+                return OrderResponse.from(placeOrder.handle(r.toCommand()));
+            }
+        }
 
   - id: ports-owned-by-application
     group: dependency
@@ -69,6 +135,24 @@ rules:
       Interfaces for outbound dependencies are declared in `application` and
       implemented in `adapter.out`, so the direction of the dependency is
       inverted.
+    help: >-
+      Declaring the interface where it is used, rather than next to its implementation,
+      is what actually inverts the dependency: the application states what it needs, and
+      the adapter conforms. It also keeps the interface honest, shaped by the use case
+      instead of by the database driver, and lets you swap the implementation without
+      the application noticing.
+    example:
+      bad: |
+        // adapter/out/persistence/OrderRepository.java
+        public interface OrderRepository { ... }
+        // application must now import the adapter package
+      good: |
+        // application/port/out/Orders.java
+        public interface Orders {
+            Optional<Order> byId(OrderId id);
+            void save(Order order);
+        }
+        // adapter/out/persistence/JpaOrders.java implements Orders
 
   - id: no-entities-across-boundary
     group: responsibility
@@ -77,6 +161,21 @@ rules:
     body: >-
       Inbound adapters map to and from their own request and response types.
       Persistence entities never appear in a controller signature.
+    help: >-
+      Returning a persistence entity makes every column a published API field, so a
+      rename becomes a breaking change and a newly added column becomes an unintended
+      disclosure. Lazy associations make it worse: serialization walks them and you
+      either leak half the object graph or fail at write time, outside any transaction.
+    example:
+      bad: |
+        @GetMapping("/users/{id}")
+        UserEntity get(@PathVariable long id) { ... }
+        // ships passwordHash, internalNotes and every future column
+      good: |
+        @GetMapping("/users/{id}")
+        UserResponse get(@PathVariable long id) {
+            return UserResponse.from(getUser.handle(id));   // explicit fields
+        }
 
   - id: adapters-hold-no-business-logic
     group: responsibility
@@ -85,6 +184,25 @@ rules:
     body: >-
       An adapter converts between transport or storage types and application
       types. Business decisions belong in the domain or the use case.
+    help: >-
+      A rule inside a controller is reachable only over HTTP, so a scheduled job or a
+      message consumer doing the same work has to re-implement it, and the two copies
+      drift. Testing it also requires standing up the web layer. Keep adapters to
+      translation and let the decision live where every caller can reach it.
+    example:
+      bad: |
+        @PostMapping("/orders")
+        OrderResponse create(@RequestBody OrderRequest r) {
+            if (r.total().compareTo(LIMIT) > 0 && !r.customer().isVerified())
+                throw new BadRequest("needs verification");   // a business rule
+            return ...;
+        }
+      good: |
+        @PostMapping("/orders")
+        OrderResponse create(@RequestBody OrderRequest r) {
+            return OrderResponse.from(placeOrder.handle(r.toCommand()));
+        }
+        // PlaceOrder (or Order itself) enforces the verification rule
 
   - id: use-cases-are-transactional-boundary
     group: responsibility
@@ -93,6 +211,25 @@ rules:
     body: >-
       Start and commit a unit of work in the application layer, not in an
       adapter and not in the domain.
+    help: >-
+      The use case is the only layer that knows what constitutes one complete piece of
+      work. Put the boundary in an adapter and a single request can commit halfway,
+      leaving records that violate an invariant; put it in the domain and the domain now
+      depends on a persistence framework. One @Transactional on the use case keeps both
+      problems away.
+    example:
+      bad: |
+        @Transactional                    // on the repository method
+        public void save(OrderEntity e) { ... }
+        // two saves in one request commit independently
+      good: |
+        @Transactional                    // on the use case
+        public Order handle(PlaceOrderCommand cmd) {
+            Order order = Order.place(cmd);
+            orders.save(order);
+            inventory.reserve(order.lines());   // both, or neither
+            return order;
+        }
 
   - id: constructor-injection
     group: responsibility
@@ -102,6 +239,30 @@ rules:
       Declare collaborators as final constructor parameters. Field and
       setter injection hide dependencies and make objects constructible in
       invalid states.
+    help: >-
+      Constructor parameters make the dependencies part of the type: you cannot build
+      the object without them, so a half-initialised instance never exists and the
+      compiler tells you when the list grows too long. Field injection hides all of
+      that, and a test then has to use reflection or a running container to construct
+      the object at all.
+    example:
+      bad: |
+        @Service
+        class PlaceOrder {
+            @Autowired private Orders orders;       // hidden, mutable
+            @Autowired private Inventory inventory; // NPE if built with new
+        }
+      good: |
+        @Service
+        class PlaceOrder {
+            private final Orders orders;
+            private final Inventory inventory;
+
+            PlaceOrder(Orders orders, Inventory inventory) {
+                this.orders = orders;
+                this.inventory = inventory;
+            }
+        }
 
   - id: no-static-mutable-singletons
     group: responsibility
@@ -110,3 +271,20 @@ rules:
     body: >-
       Business state must not live in a static field. Pass collaborators
       explicitly so behaviour can be substituted in a test.
+    help: >-
+      Static mutable state is shared by everything in the JVM, including tests, which
+      then leak into each other and pass or fail depending on order. It cannot be
+      substituted, so any code touching it can only be tested against the real thing,
+      and under concurrency it is a data race by construction. Pass the collaborator
+      instead.
+    example:
+      bad: |
+        class RateLimiter {
+            static Map<String, Integer> counts = new HashMap<>();
+            // shared across threads and across tests; not substitutable
+        }
+      good: |
+        class RateLimiter {
+            private final ConcurrentMap<String, Integer> counts;
+            RateLimiter(ConcurrentMap<String, Integer> counts) { this.counts = counts; }
+        }

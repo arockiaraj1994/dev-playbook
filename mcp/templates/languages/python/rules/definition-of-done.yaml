@@ -1,0 +1,85 @@
+contributes_to: core/definition-of-done.md
+section: Python
+
+rules:
+  - id: dod-ruff-clean
+    group: mechanical
+    severity: hard
+    title: ruff check and ruff format report nothing
+    body: >-
+      No new ruff findings and no `# noqa` added to reach that state. The tree is
+      formatted, so the diff is the change and nothing else.
+    help: >-
+      The `# noqa` clause is the part that matters: silencing a finding to get a green
+      run leaves the defect and adds a suppression nobody revisits, so the lint result
+      stops meaning anything. Running the formatter keeps whitespace out of the diff
+      entirely, which is what lets review comments be about the code.
+    example:
+      bad: |
+        x = eval(expr)   # noqa: S307   -- added to make the gate pass
+      good: |
+        $ ruff format . && ruff check .
+          All checks passed!
+
+  - id: dod-mypy-strict
+    group: mechanical
+    severity: hard
+    title: mypy passes in strict mode
+    body: >-
+      `mypy --strict src tests` is clean, with no new `# type: ignore`. An
+      unavoidable one names the error code and says why.
+    help: >-
+      Strict mode is what makes the annotations load-bearing rather than decorative:
+      without it an unannotated function is simply skipped, so the checker silently
+      covers less than you think. A `type: ignore` with no error code suppresses
+      whatever appears on that line, including a different error that arrives later, so
+      name the code and say why.
+    example:
+      bad: |
+        result = lib.call(cfg)  # type: ignore
+      good: |
+        # type: ignore[no-untyped-call]  # lib is untyped; tracked in #412
+        result = lib.call(cfg)
+
+  - id: dod-public-api-annotated
+    group: correctness
+    severity: soft
+    title: Exported functions declare their types
+    body: >-
+      Anything importable from the package declares its parameter and return
+      types rather than relying on inference across a module boundary.
+    help: >-
+      Inference works well inside a module and badly across a boundary: an inferred
+      return type changes silently when the implementation changes, so a refactor can
+      alter your published API without the signature moving. Explicit annotations turn
+      that into an error in the file that owns the contract, and they are what the
+      caller's editor shows.
+    example:
+      bad: |
+        def parse_order(raw):
+            return Order(id=raw["id"], total=Decimal(raw["total"]))
+      good: |
+        def parse_order(raw: object) -> Order:
+            return OrderSchema.validate(raw)
+
+  - id: dod-dependency-audit
+    group: security
+    severity: soft
+    title: The dependency audit is clean
+    body: >-
+      `pip-audit` reports no known vulnerability in the locked set, or the
+      exception is recorded with an expiry date.
+    source: OWASP C2
+    help: >-
+      An audit in the gate turns a published advisory into a failing build rather than
+      something you learn about from a security mailing list months later. The expiry
+      date on an exception is what stops "we will deal with it next sprint" becoming
+      permanent: when it lapses the build fails again and the decision has to be made
+      afresh.
+    example:
+      bad: |
+        # pip-audit skipped in CI "until we upgrade"
+      good: |
+        $ pip-audit
+          No known vulnerabilities found
+        # exceptions.toml: GHSA-xxxx expires 2026-10-01, tracked in #418

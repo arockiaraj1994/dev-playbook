@@ -1,0 +1,561 @@
+doc: languages/python/anti-patterns.md
+label: Common mistakes
+merge: by-group
+title: Python anti-patterns - {{project}}
+description: Patterns to avoid when writing Python for {{project}}, and what to do instead.
+tags: [python, anti-patterns]
+intro: |
+  Know these before writing code. Each one is a defect this project has decided
+  not to accept, not a matter of taste.
+groups:
+  - id: typing
+    title: Typing
+  - id: structure
+    title: Structure
+  - id: async
+    title: Async
+  - id: errors
+    title: Errors
+  - id: security
+    title: Security
+outro: |
+  ```python
+  # Wrong: mutable default, cast instead of validation, swallowed error,
+  # query built by formatting
+  def load(ids=[]):
+      user = cast(User, requests.get(url).json())
+      try:
+          db.execute(f"SELECT * FROM users WHERE id = {user.id}")
+      except Exception:
+          pass
+
+  # Right: no shared default, parsed at the boundary, bound parameter,
+  # narrow except with context
+  def load(ids: list[int] | None = None) -> list[Row]:
+      user = User.model_validate(requests.get(url, timeout=5).json())
+      try:
+          return db.execute(SELECT_USER, {"id": user.id}).fetchall()
+      except DatabaseError as err:
+          raise UserLookupFailed(user.id) from err
+  ```
+rules:
+  - id: ap-cast-as-validation
+    group: typing
+    severity: hard
+    title: Don't use cast in place of real validation
+    body: >-
+      `cast(User, payload)` tells mypy to stop checking; it does not make the
+      value a `User`. Parse with a runtime validator at the boundary.
+    help: >-
+      `cast` is a note to mypy and nothing else: it emits no code and checks no value.
+      The mismatch therefore survives to runtime and surfaces as an AttributeError or a
+      KeyError somewhere downstream, in code that reasonably assumed the value had been
+      checked. Parse once at the boundary and let the validated type flow inward.
+    example:
+      bad: |
+        payload = cast(User, await request.json())
+        payload.profile.name.upper()
+        # AttributeError: 'dict' object has no attribute 'profile'
+      good: |
+        payload = User.model_validate(await request.json())
+        # raises here, at the boundary, naming the offending field
+
+  - id: ap-any-everywhere
+    group: typing
+    severity: soft
+    title: Don't annotate with Any to silence mypy
+    body: >-
+      `Any` disables checking for every expression it touches. Use `object` and
+      narrow, a `Protocol`, or a `TypedDict` for a known dict shape.
+    help: >-
+      `Any` is contagious: every expression derived from it is also `Any`, so one
+      annotation in a parsing helper switches off checking for everything downstream
+      that uses the result. `object` says the same "I don't know" while still forcing a
+      narrowing, and a Protocol or TypedDict says what you actually expect.
+    example:
+      bad: |
+        def parse(raw: Any) -> Any:
+            return raw["data"]["items"]
+
+        n: int = parse(x)   # mypy is silent; wrong at runtime
+      good: |
+        class Payload(TypedDict):
+            data: dict[str, list[str]]
+
+        def parse(raw: object) -> list[str]:
+            payload = PayloadSchema.validate(raw)
+            return payload["data"]["items"]
+
+  - id: ap-dict-as-a-record
+    group: typing
+    severity: soft
+    title: Don't pass a dict where a type belongs
+    body: >-
+      `dict[str, Any]` moving between layers means every reader guesses the keys.
+      A frozen dataclass names the fields once and fails at the boundary instead
+      of three calls later.
+    help: >-
+      A dict passed between layers carries no record of which keys exist, so every
+      reader either guesses or goes looking for the producer. A typo becomes a KeyError
+      three calls away from the mistake, and adding a field means auditing every
+      consumer by hand. A frozen dataclass names the fields once and fails where the
+      data enters.
+    example:
+      bad: |
+        def price(order: dict[str, Any]) -> Decimal:
+            return order["total"] * order["taxRate"]   # or was it tax_rate?
+      good: |
+        @dataclass(frozen=True)
+        class Order:
+            total: Decimal
+            tax_rate: Decimal
+
+        def price(order: Order) -> Decimal:
+            return order.total * order.tax_rate
+
+  - id: ap-boolean-blindness
+    group: typing
+    severity: soft
+    title: Use an enum instead of several booleans
+    body: >-
+      Two booleans encode four states, of which perhaps two are legal. An `Enum`
+      or a `Literal` union makes the illegal ones unrepresentable.
+    help: >-
+      Independent booleans multiply: three describe eight states, and if only three are
+      legal the rest are bugs waiting for a call site to produce them. They also read
+      badly at the call site, where a bare `True` says nothing about which flag it is.
+      An Enum or a Literal union enumerates exactly the legal states and lets mypy check
+      a match for exhaustiveness.
+    example:
+      bad: |
+        def render(is_loading: bool, is_error: bool) -> str: ...
+        render(True, True)   # loading and errored at once
+      good: |
+        State = Literal["loading", "error", "ready"]
+        def render(state: State) -> str: ...
+
+  - id: ap-optional-then-assert
+    group: typing
+    severity: soft
+    title: Don't answer an Optional with an assert
+    body: >-
+      `assert x is not None` to appease the checker restates the problem. Narrow
+      with a real check that raises, or make the type honest about absence.
+    help: >-
+      The assert restates the problem rather than solving it: it tells the checker the
+      value is present without establishing that it is. It is also removed entirely
+      under `python -O`, so the guard you were relying on disappears in the environment
+      where it would have mattered most. Raise a real exception, or change the type so
+      absence is expected.
+    example:
+      bad: |
+        user = repo.find(user_id)
+        assert user is not None    # vanishes under python -O
+        return user.name
+      good: |
+        user = repo.find(user_id)
+        if user is None:
+            raise UserNotFound(user_id)
+        return user.name
+
+  - id: ap-god-utils-module
+    group: structure
+    severity: soft
+    title: Don't collect unrelated helpers in utils.py
+    body: >-
+      Unrelated functions in one module couple everything that imports it. Put
+      the function next to the type it serves.
+    help: >-
+      A module with no organising idea attracts everything, so importing one function
+      pulls in the imports of all of them, and a slow or optional dependency becomes
+      mandatory for every caller. It also becomes a hub in the import graph, which is
+      where circular imports form. Put the function beside the type it serves.
+    example:
+      bad: |
+        # utils.py
+        def slugify(s: str) -> str: ...
+        def format_money(c: int) -> str: ...
+        def get_engine() -> Engine: ...   # every importer now needs sqlalchemy
+      good: |
+        # text/slug.py    -> slugify
+        # money/format.py -> format_money
+        # db/engine.py    -> get_engine
+
+  - id: ap-mutating-arguments
+    group: structure
+    severity: hard
+    title: Don't modify a list or dict passed in
+    body: >-
+      Callers do not expect their object to change. Return a new value, and take
+      a `Sequence` or `Mapping` when you only need to read.
+    help: >-
+      Lists and dicts are passed by reference, so mutating a parameter changes the
+      caller's object with nothing at the call site to suggest it. The bug appears as a
+      value changing between two lines that do not seem to touch it. Taking `Sequence`
+      or `Mapping` when you only read makes the intent explicit and lets mypy enforce
+      it.
+    example:
+      bad: |
+        def add_defaults(items: list[str]) -> None:
+            items.append("default")   # caller's list changed
+      good: |
+        def with_defaults(items: Sequence[str]) -> list[str]:
+            return [*items, "default"]
+
+  - id: ap-class-with-one-method
+    group: structure
+    severity: soft
+    title: Don't wrap a single function in a class
+    body: >-
+      A class whose only members are `__init__` and one method is a function with
+      extra ceremony. Keep the class when it holds injected dependencies.
+    help: >-
+      A class whose only members are `__init__` and one method is a function that made
+      you write two extra lines and instantiate an object before calling it. The class
+      earns its place when it holds injected collaborators used by several methods, or
+      when it carries state between calls; otherwise a function is the smaller and more
+      testable unit.
+    example:
+      bad: |
+        class SlugGenerator:
+            def __init__(self, text: str) -> None:
+                self.text = text
+            def generate(self) -> str:
+                return self.text.lower().replace(" ", "-")
+
+        SlugGenerator(title).generate()
+      good: |
+        def slugify(text: str) -> str:
+            return text.lower().replace(" ", "-")
+
+        slugify(title)
+
+  - id: ap-inheritance-for-reuse
+    group: structure
+    severity: soft
+    title: Compose behaviour instead of subclassing for it
+    body: >-
+      Subclassing to borrow a method couples the two forever. Inherit to be
+      substitutable; compose to reuse.
+    help: >-
+      Subclassing inherits the parent's whole surface, not the one method you wanted,
+      and permanently ties you to its future: a method added upstream silently becomes
+      part of your API. Inherit when instances of yours must be usable wherever the
+      parent is; compose when you only want to call something the parent happens to
+      have.
+    example:
+      bad: |
+        class AuditedDict(dict):
+            def __setitem__(self, k, v):
+                audit(k)
+                super().__setitem__(k, v)
+            # update() and setdefault() bypass this entirely
+      good: |
+        class AuditedStore:
+            def __init__(self) -> None:
+                self._data: dict[str, str] = {}
+            def set(self, k: str, v: str) -> None:
+                audit(k)
+                self._data[k] = v
+
+  - id: ap-blocking-call-in-async
+    group: async
+    severity: hard
+    title: Don't make a blocking call inside async def
+    body: >-
+      `requests.get`, `time.sleep` or a sync driver in a coroutine stalls the
+      whole event loop. Use the async client, or `asyncio.to_thread`.
+    help: >-
+      The event loop is a single thread. A blocking call inside a coroutine does not
+      just slow that request down, it stops every other coroutine in the process until
+      it returns, so one slow dependency stalls the entire service. Use the async client
+      where one exists, and `asyncio.to_thread` for genuinely synchronous work you
+      cannot avoid.
+    example:
+      bad: |
+        async def fetch(url: str) -> str:
+            return requests.get(url).text   # whole loop blocked
+      good: |
+        async def fetch(url: str) -> str:
+            async with httpx.AsyncClient() as client:
+                return (await client.get(url)).text
+        # or: await asyncio.to_thread(legacy_sync_call, arg)
+
+  - id: ap-fire-and-forget-task
+    group: async
+    severity: hard
+    title: Don't drop the result of create_task
+    body: >-
+      A task nobody holds can be garbage collected mid-flight, and its exception
+      is never seen. Await it, or run it inside a `TaskGroup`.
+    help: >-
+      asyncio holds only a weak reference to a running task, so a task nobody keeps can
+      be collected mid-flight and simply stop, with no error anywhere. If it does fail
+      instead, the exception surfaces only when the task object is finalised, often as a
+      "never retrieved" warning long after the request ended. TaskGroup owns the task
+      and propagates the failure.
+    example:
+      bad: |
+        asyncio.create_task(send_email(user))
+        # may be collected mid-flight; exceptions never seen
+      good: |
+        async with asyncio.TaskGroup() as tg:
+            tg.create_task(send_email(user))
+        # or keep a reference and await it
+
+  - id: ap-await-in-loop
+    group: async
+    severity: soft
+    title: Don't await one at a time when work is independent
+    body: >-
+      Awaiting inside a loop serialises independent work. Use a `TaskGroup` or
+      `asyncio.gather` when the iterations do not depend on each other - and keep
+      the loop when they do.
+    help: >-
+      Awaiting inside a loop makes total time the sum of the parts, so a hundred 50ms
+      calls take five seconds instead of fifty milliseconds, for no benefit when the
+      iterations are independent. Serialising is genuinely correct when one call feeds
+      the next or when you are deliberately rate-limiting, so keep the loop in those
+      cases and say why.
+    example:
+      bad: |
+        users = []
+        for uid in ids:
+            users.append(await fetch_user(uid))   # 100 x 50ms
+      good: |
+        async with asyncio.TaskGroup() as tg:
+            tasks = [tg.create_task(fetch_user(uid)) for uid in ids]
+        users = [t.result() for t in tasks]
+
+  - id: ap-swallowing-cancellation
+    group: async
+    severity: hard
+    title: Never catch CancelledError and carry on
+    body: >-
+      Cancellation is how shutdown and timeouts work. Catch it only to clean up,
+      then re-raise.
+    help: >-
+      CancelledError is not a failure, it is the message that says stop: it is how
+      timeouts fire and how shutdown drains work. Catching it and continuing makes the
+      coroutine uncancellable, so `asyncio.timeout` stops working and the process hangs
+      on shutdown. Catch it only to release something, then re-raise.
+    example:
+      bad: |
+        try:
+            await work()
+        except asyncio.CancelledError:
+            log.info("cancelled")   # swallowed: timeouts no longer work
+      good: |
+        try:
+            await work()
+        except asyncio.CancelledError:
+            await conn.close()
+            raise
+
+  - id: ap-catch-and-continue
+    group: errors
+    severity: hard
+    title: Never leave an except block empty
+    body: >-
+      `except Exception: pass` hides the failure and produces wrong results
+      later. Handle it, wrap it with context, or let it propagate.
+    help: >-
+      An empty except converts a failure into a wrong answer: the operation did not
+      happen, nothing recorded that, and the code proceeds as though it had. The
+      eventual bug appears far from its cause with no traceback to follow. If the error
+      is genuinely acceptable, log it and say in a comment why; otherwise add context
+      and re-raise.
+    example:
+      bad: |
+        try:
+            cache.delete(key)
+        except Exception:
+            pass
+      good: |
+        try:
+            cache.delete(key)
+        except CacheUnavailable:
+            # Best-effort: the entry expires within 60s anyway.
+            log.debug("cache evict failed key=%s", key, exc_info=True)
+
+  - id: ap-losing-the-cause
+    group: errors
+    severity: soft
+    title: Keep the original error when re-raising
+    body: >-
+      `raise MyError(...) from err` keeps the traceback that explains what
+      actually happened. Without it the report starts at the wrapper.
+    help: >-
+      Without `from err`, Python still chains the exception implicitly, but a bare
+      `raise X()` outside an except block or a `from None` discards the original
+      entirely, and the report then starts at your wrapper. What you lose is the frame
+      that actually knows what went wrong: the driver error, the failing row, the socket
+      message. Say `from err` and keep it.
+    example:
+      bad: |
+        try:
+            row = db.fetch(order_id)
+        except DriverError:
+            raise OrderLookupFailed(order_id) from None
+        # traceback starts here; the driver's message is gone
+      good: |
+        try:
+            row = db.fetch(order_id)
+        except DriverError as err:
+            raise OrderLookupFailed(order_id) from err
+
+  - id: ap-exception-as-control-flow
+    group: errors
+    severity: soft
+    title: Don't use exceptions for an expected outcome
+    body: >-
+      A declined payment is a result, not an exception. Return a value for what
+      you expect; raise for what you did not.
+    help: >-
+      An exception says something happened that the caller could not have anticipated. A
+      declined card, a not-found lookup and a failed validation are all anticipated:
+      they are ordinary outcomes of the operation. Modelling them as return values means
+      the type system lists them and the caller cannot forget one, which a try/except
+      never guarantees.
+    example:
+      bad: |
+        def charge(card: Card) -> None:
+            if not gateway.ok(card):
+                raise PaymentDeclined()   # a normal outcome, raised
+      good: |
+        @dataclass(frozen=True)
+        class Charged: reference: str
+        @dataclass(frozen=True)
+        class Declined: reason: str
+
+        def charge(card: Card) -> Charged | Declined: ...
+
+  - id: ap-string-formatted-queries
+    group: security
+    severity: hard
+    title: Don't build queries with f-strings
+    body: >-
+      Use bound parameters or the ORM's expression API. Formatting a value into
+      SQL is injection waiting for the right input.
+    source: OWASP C3
+    help: >-
+      An f-string makes interpolation invisible: `{value}` looks the same whether it
+      holds a constant or a request field. Bound parameters keep a value a value, so
+      nothing the user sends can be reparsed as SQL. The habit only protects you without
+      exceptions, which is why it applies to migrations and admin scripts too.
+    example:
+      bad: |
+        cur.execute(f"SELECT * FROM users WHERE email = '{email}'")
+        # email = "' OR '1'='1"  ->  every row
+      good: |
+        cur.execute("SELECT * FROM users WHERE email = %s", (email,))
+        # or session.execute(select(User).where(User.email == email))
+
+  - id: ap-shell-true
+    group: security
+    severity: hard
+    title: Don't pass shell=True to subprocess
+    body: >-
+      With `shell=True` a semicolon in any interpolated value runs a second
+      command. Pass an argument list instead.
+    source: OWASP C4
+    help: >-
+      `shell=True` hands your string to a shell, which then interprets semicolons,
+      pipes, backticks and redirection in it. Any interpolated value therefore becomes
+      an opportunity to run a second command. The list form passes each element as one
+      argument with no shell involved, so a filename containing a semicolon stays a
+      filename.
+    example:
+      bad: |
+        subprocess.run(f"git log {ref}", shell=True)
+        # ref = "main; rm -rf /"
+      good: |
+        subprocess.run(["git", "log", ref], check=True)
+
+  - id: ap-trusting-client-ids
+    group: security
+    severity: hard
+    title: Don't trust an id sent by the client
+    body: >-
+      Re-check authorisation against the authenticated session on every request.
+      An id in the body proves nothing about who may read that row.
+    source: OWASP C1
+    help: >-
+      An id in a request says which row the caller wants, never that they are entitled
+      to it. Changing one value is the whole attack and it needs no tooling. Authorise
+      at the point of access, on every request, filtering by the authenticated principal
+      rather than checking once when the link was generated.
+    example:
+      bad: |
+        @app.get("/invoices/{invoice_id}")
+        async def get(invoice_id: int) -> Invoice:
+            return await repo.get(invoice_id)   # any id, any tenant
+      good: |
+        @app.get("/invoices/{invoice_id}")
+        async def get(invoice_id: int, user: User = Depends(current_user)) -> InvoiceResponse:
+            invoice = await repo.get_for_owner(invoice_id, user.id)
+            if invoice is None:
+                raise HTTPException(404)   # not 403: don't confirm it exists
+            return InvoiceResponse.from_domain(invoice)
+
+  - id: ap-leaking-errors-to-client
+    group: security
+    severity: hard
+    title: Don't return raw errors to callers
+    body: >-
+      Return a stable, generic error and keep the detail in the log. A traceback
+      in a response discloses internals to anyone who can trigger a failure.
+    source: OWASP C3
+    help: >-
+      A traceback names your modules, file paths, library versions and frequently the
+      failing query. Anyone who can make the endpoint fail gets that for free, which
+      turns your error handler into a reconnaissance tool. Return one stable message
+      plus a correlation id, and keep the detail where only you can read it.
+    example:
+      bad: |
+        except Exception as e:
+            return JSONResponse({"error": traceback.format_exc()}, 500)
+      good: |
+        except Exception:
+            log.exception("lookup failed trace=%s", trace_id)
+            return JSONResponse({"error": "Internal error", "trace": trace_id}, 500)
+
+  - id: ap-logging-secrets
+    group: security
+    severity: hard
+    title: Don't log tokens, passwords or full payloads
+    body: >-
+      Logs are copied, shipped and retained far longer than the data policy
+      expects. Log identifiers, not the request body.
+    source: OWASP C9
+    help: >-
+      Logs travel further than the code that writes them: aggregators, third-party
+      search, screenshots in tickets, and retention windows nobody revisits. Logging a
+      whole request body means logging whatever it happens to contain, including fields
+      added later. Log the identifiers you need to trace the request and the outcome you
+      need to debug it.
+    example:
+      bad: |
+        log.info("login attempt %s", await request.json())
+        # email, password, device fingerprint - retained 90 days
+      good: |
+        log.info("login attempt user=%s result=%s", user_id, result)
+
+  - id: ap-requests-without-timeout
+    group: security
+    severity: soft
+    title: Give every outbound call a timeout
+    body: >-
+      `requests.get(url)` waits forever by default. One slow dependency then
+      exhausts the pool and takes the service with it.
+    help: >-
+      requests has no default timeout, so a call to a hung dependency waits indefinitely
+      while holding a worker. Under load every worker ends up parked on the same dead
+      upstream and your service stops answering unrelated requests, which is how one
+      dependency's outage becomes yours. Set both connect and read timeouts on every
+      outbound call.
+    example:
+      bad: |
+        resp = requests.get(url)          # waits forever
+      good: |
+        resp = requests.get(url, timeout=(3.05, 10))   # connect, read

@@ -203,12 +203,12 @@ async def test_list_tool_stats_aggregates(store: MetricsStore) -> None:
     )
     stats = await store.list_tool_stats(window_days=7)
     # Historical names fold onto the current playbook_* names for display, so
-    # the v0.8.0 rename does not orphan already-recorded calls.
+    # no rename orphans already-recorded calls.
     by_tool = {s.tool_name: s for s in stats}
-    assert by_tool["playbook_find"].calls == 5
-    assert by_tool["playbook_find"].error_count == 0
-    assert 25 <= by_tool["playbook_find"].p50_latency_ms <= 35
-    assert by_tool["playbook_get"].error_count == 1
+    assert by_tool["playbook_find_standards"].calls == 5
+    assert by_tool["playbook_find_standards"].error_count == 0
+    assert 25 <= by_tool["playbook_find_standards"].p50_latency_ms <= 35
+    assert by_tool["playbook_get_standard"].error_count == 1
 
 
 async def test_list_doc_fetches(store: MetricsStore) -> None:

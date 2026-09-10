@@ -1,0 +1,12 @@
+id: go
+kind: language
+title: Go
+language: go
+language_version: "1.23"
+template_version: "1.0.0"
+gate: gates/scripts/verify-go.sh
+description: >-
+  Framework-neutral Go standards drawn from Effective Go, the Google Go Style
+  Guide, and the OWASP Top 10 Proactive Controls.
+placeholders:
+  - module
