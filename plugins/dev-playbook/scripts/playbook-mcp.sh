@@ -42,9 +42,9 @@ if [[ ! -f "$server_dir/server.py" ]]; then
   The plugin needs the dev-playbook server sources to run.
   Fix: set the plugin's 'server_path' option to the repo's mcp/ directory -
   /plugin -> dev-playbook -> Configure, or add
-    \"server_path\": \"/path/to/dev-agent-playbook/mcp\"
+    \"server_path\": \"/path/to/dev-playbook/mcp\"
   to the plugin's config. Clone from
-  https://github.com/arockiaraj1994/dev-agent-playbook if you do not have it."
+  https://github.com/arockiaraj1994/dev-playbook if you do not have it."
 fi
 server_dir="$(cd -- "$server_dir" && pwd)"
 

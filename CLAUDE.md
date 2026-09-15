@@ -1,6 +1,6 @@
-# dev-agent-playbook
+# dev-playbook
 
-This repo's `origin` remote (`git@github.com:arockiaraj1994/dev-agent-playbook.git`) is
+This repo's `origin` remote (`git@github.com:arockiaraj1994/dev-playbook.git`) is
 personal (account `arockiaraj1994`), not the work Baton Systems account.
 
 ## Git identity
