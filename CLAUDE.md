@@ -5,16 +5,24 @@ personal (account `arockiaraj1994`), not the work Baton Systems account.
 
 ## Git identity
 
-The machine's default SSH key (`~/.ssh/id_ed25519`) authenticates as the **work** GitHub
-account. To make every commit/push/fetch in this repo use the personal account instead,
-these are set in this repo's **local** git config (not global — other repos are unaffected):
+`origin` is the personal repo `arockiaraj1994/dev-playbook`, and the machine's default
+SSH key (`~/.ssh/id_ed25519`) authenticates to GitHub as that **personal** account
+**`arockiaraj1994`** — verify with `ssh -T git@github.com` ("Hi arockiaraj1994!"; the
+key's `.pub` comment is `arockiaraj1994@gmail.com`). So **pushing this repo with the
+default key is correct**; it does not use a work account.
+
+Commit identity falls back to the global git config, which is already personal, so no
+repo-local `core.sshCommand` / `user.*` override is set or needed:
 
 ```
-user.name       = Arockiaraj Rayappan
-user.email      = arockiaraj1994@gmail.com
-core.sshCommand = ssh -i ~/.ssh/id_aroc -o IdentitiesOnly=yes
+user.name  = Arockiaraj Rayappan
+user.email = arockiaraj1994@gmail.com
 ```
 
-`~/.ssh/id_aroc` is the personal key (public key comment: `arockiaraj1994@gmail.com`).
-Do not change these to the work identity/key, and do not push using the default SSH key
-from this repo.
+The other key on this machine, `~/.ssh/id_ed25519_praximind`, is a different account
+(`praximind@gmail.com`) — don't use it for this repo.
+
+> Corrected 2026-09-15: an earlier setup kept the personal key in `~/.ssh/id_aroc` and
+> treated the default `~/.ssh/id_ed25519` as the work account. That key is gone and the
+> default key is now the personal account, so the old "don't push with the default key"
+> rule no longer applies.
