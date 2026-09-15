@@ -8,6 +8,16 @@ changes after 1.0.0 will bump the **major**.
 
 ## [Unreleased]
 
+### Changed
+
+- **Default credentials are now admin/admin out of the box.** Removed the
+  startup guard that refused to boot on the literal admin/admin pair when
+  `MCP_HOST=0.0.0.0`, and made `MCP_ADMIN_PASSWORD` optional in
+  `docker-compose.yml` (defaults to `admin`, still overridable) so
+  `docker compose up -d` runs with no `.env`. The compose port stays published
+  on `127.0.0.1` only; set a strong `MCP_ADMIN_PASSWORD` before exposing it.
+  (Redmine #411)
+
 ### Added - dev-playbook plugin v0.1.0 - one command instead of a setup guide
 
 Reaching the v1.1.0 tool surface still cost a running server, a bearer token

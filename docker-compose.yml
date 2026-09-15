@@ -1,7 +1,7 @@
 # dev-playbook - MCP rule server + dashboard.
 #
-#   cp .env.example .env      # set MCP_ADMIN_PASSWORD, then:
-#   docker compose up -d
+#   docker compose up -d      # works out of the box (admin/admin)
+#   cp .env.example .env      # optional: override MCP_ADMIN_PASSWORD first
 #
 # Dashboard:  http://localhost:${MCP_PORT:-8420}/dashboard/
 # MCP (SSE):  http://localhost:${MCP_PORT:-8420}/sse
@@ -12,8 +12,9 @@
 # - they are paths on the same server. The container listens on 3000 internally.
 # Override with MCP_PORT in .env.
 #
-# The container binds 0.0.0.0, so the server refuses to start on the default
-# admin/admin credentials - MCP_ADMIN_PASSWORD is required, not optional.
+# The container binds 0.0.0.0 and defaults to admin/admin, so the published
+# port is loopback-only (below). Set MCP_ADMIN_PASSWORD in .env before exposing
+# it beyond localhost.
 
 services:
   dev-playbook:
@@ -40,8 +41,9 @@ services:
       MCP_DB_PATH: /data/metrics.db
       MCP_SERVER_LABEL: "${MCP_SERVER_LABEL:-dev-playbook}"
       MCP_ADMIN_USER: "${MCP_ADMIN_USER:-admin}"
-      # No default: compose fails loudly rather than the server exiting 1.
-      MCP_ADMIN_PASSWORD: "${MCP_ADMIN_PASSWORD:?set MCP_ADMIN_PASSWORD in .env}"
+      # Defaults to admin/admin so `up` works with no .env; override for any
+      # non-local use. Port is loopback-only (above) to keep the weak default safe.
+      MCP_ADMIN_PASSWORD: "${MCP_ADMIN_PASSWORD:-admin}"
       MCP_INACTIVE_DAYS: "${MCP_INACTIVE_DAYS:-2}"
       # Storage backend. Default "sqlite" uses MCP_DB_PATH above. Set to
       # "postgres" AND activate the postgres profile (below) to use the DB

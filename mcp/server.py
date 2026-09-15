@@ -26,7 +26,7 @@ Config (optional): config.toml next to server.py, or path in MCP_CONFIG.
   [enable] scaffold - default true. False hides playbook_scaffold_standards.
   [admin] username - default admin (seeded on first run). There is no
     committed password: set MCP_ADMIN_PASSWORD, or the seeded default is
-    "admin", which the server refuses to start on when MCP_HOST=0.0.0.0.
+    "admin". Set a strong one before binding MCP_HOST=0.0.0.0 publicly.
 
 Other env vars:
   MCP_PORT - HTTP port (default 8420; serves both MCP and the dashboard)
@@ -34,8 +34,8 @@ Other env vars:
   MCP_DB_PATH - sqlite DB (default <repo>/mcp/data/metrics.db)
   MCP_INACTIVE_DAYS - "inactive" threshold (default 2)
   MCP_ADMIN_USER - override default admin username (default: admin)
-  MCP_ADMIN_PASSWORD - admin password seeded on first run (default: admin,
-    which is refused when MCP_HOST=0.0.0.0)
+  MCP_ADMIN_PASSWORD - admin password seeded on first run (default: admin;
+    override before binding MCP_HOST=0.0.0.0 publicly)
   MCP_EDITOR - under --stdio, the client name recorded in telemetry
     (default: claude-code). Over SSE this comes from the User-Agent instead.
   MCP_STANDARDS_SEED - JSON seed file loaded into the standards tables on
@@ -746,20 +746,6 @@ async def _serve() -> None:
     cfg = load_mcp_config()
     port = _int_env("MCP_PORT", DEFAULT_PORT)
     host = os.environ.get("MCP_HOST", DEFAULT_HOST).strip() or DEFAULT_HOST
-
-    # Refuse default admin/admin when binding to all interfaces.
-    if (
-        host in ("0.0.0.0", "::")
-        and cfg.admin_username == "admin"
-        and cfg.admin_password == "admin"
-    ):
-        logger.error(
-            "Refusing to start: MCP_HOST=%s with default admin/admin credentials. "
-            "Set MCP_ADMIN_PASSWORD (and preferably MCP_ADMIN_USER) to a strong "
-            "value, or bind to 127.0.0.1.",
-            host,
-        )
-        sys.exit(1)
 
     db_path = _resolve_db_path()
     metrics = MetricsStore(db_path)

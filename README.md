@@ -14,11 +14,12 @@ Two commands. Run whichever you need — they work independently.
 **1. Run the server (MCP + dashboard) with Docker:**
 
 ```bash
-MCP_ADMIN_PASSWORD=changeme docker compose up -d
+docker compose up -d
 ```
 
 MCP at `http://localhost:8420/sse`, dashboard at `http://localhost:8420/dashboard/`.
-Change the password — the server refuses to start on `admin`.
+Logs in with `admin`/`admin` by default; the port is published on `127.0.0.1`
+only. Set `MCP_ADMIN_PASSWORD` (in `.env` or the command) before exposing it.
 
 **2. Install the Claude Code plugin:**
 
@@ -117,7 +118,7 @@ The [Quick start](#quick-start) one-liner is the fast path. To keep config in a
 file instead of passing it inline, copy the env template and set values there:
 
 ```bash
-cp .env.example .env      # set MCP_ADMIN_PASSWORD
+cp .env.example .env      # optional: override MCP_ADMIN_PASSWORD
 docker compose up -d
 ```
 
@@ -161,7 +162,7 @@ curl -s -X POST http://localhost:8420/auth/login \
 | `MCP_INACTIVE_DAYS` | `2` | Days without a tool call before a user is "inactive". |
 | `MCP_SERVER_LABEL` | `dev-playbook` | Display name in the dashboard and MCP registration. |
 | `MCP_ADMIN_USER` | `admin` | Default admin username (seeded on first boot). |
-| `MCP_ADMIN_PASSWORD` | `admin` | Admin password, seeded on first boot. No password is committed to `config.toml`; this is the only way to set one. **Required** (non-default) when `MCP_HOST=0.0.0.0`. |
+| `MCP_ADMIN_PASSWORD` | `admin` | Admin password, seeded on first boot. No password is committed to `config.toml`; this is the only way to set one. Optional — override it before exposing the port beyond `127.0.0.1`. |
 | `MCP_EDITOR` | `claude-code` | Under `--stdio`, the client name recorded in telemetry. Over SSE this comes from the `User-Agent` instead. |
 | `MCP_STANDARDS_SEED` | `mcp/data/standards_seed.json` | JSON seed file loaded into the standards tables on first boot (only when they're empty). |
 | `MCP_TEMPLATE_CACHE` | `~/.cache/dev-playbook-templates` | Extra template pack search path, searched before the bundled `mcp/templates/`. |
@@ -174,9 +175,9 @@ there are no roles to check, so the local operator may scaffold.
 
 `config.toml` carries no password. The admin password comes from
 `MCP_ADMIN_PASSWORD` - a committed credential ends up in git history and in
-every clone. With it unset the seeded password is `admin`, which the server
-refuses to start on when `MCP_HOST=0.0.0.0`, and `docker compose` refuses to
-start at all.
+every clone. With it unset the seeded password is `admin`; the compose port is
+published on `127.0.0.1` only, so the default stays on this machine. Set a
+strong password before publishing the port to `0.0.0.0`.
 
 Auth is entirely local: create users in `/dashboard/users-admin`, issue MCP
 tokens in `/dashboard/tokens`, and authenticate clients with
