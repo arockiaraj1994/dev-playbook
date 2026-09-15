@@ -20,8 +20,8 @@ username = "admin"
 # There is deliberately no password here. A committed password ends up in git
 # history and in every clone of this repo, so the password comes from the
 # MCP_ADMIN_PASSWORD environment variable instead - see .env.example and
-# docker-compose.yml, which fails to start without it.
+# docker-compose.yml.
 #
-# With MCP_ADMIN_PASSWORD unset the seeded password falls back to "admin", and
-# the server refuses to start on that pair when MCP_HOST=0.0.0.0. That keeps a
-# throwaway loopback run frictionless without ever exposing one.
+# With MCP_ADMIN_PASSWORD unset the seeded password falls back to "admin". The
+# compose port is published on 127.0.0.1 only, so that default stays local; set
+# a strong password before binding MCP_HOST=0.0.0.0 to a reachable interface.
