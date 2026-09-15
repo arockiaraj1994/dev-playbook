@@ -3,12 +3,14 @@
 #   cp .env.example .env      # set MCP_ADMIN_PASSWORD, then:
 #   docker compose up -d
 #
-# Dashboard:  http://localhost:${MCP_PORT:-3001}/dashboard/
-# MCP (SSE):  http://localhost:${MCP_PORT:-3001}/sse
+# Dashboard:  http://localhost:${MCP_PORT:-8420}/dashboard/
+# MCP (SSE):  http://localhost:${MCP_PORT:-8420}/sse
 #
-# Host port defaults to 3001, not the app's native 3000: Redmine owns 3000 on
-# this box, and pointing an MCP client at the wrong 3000 fails as an opaque 404
-# on /sse. Override with MCP_PORT in .env.
+# Host port defaults to 8420: a dedicated port in a quiet band, clear of the
+# popular defaults (3000 React/Rails, 5000, 5173 Vite, 8000, 8080, 9000) and of
+# Redmine on 3000. One port serves both MCP (/sse) and the dashboard (/dashboard/)
+# - they are paths on the same server. The container listens on 3000 internally.
+# Override with MCP_PORT in .env.
 #
 # The container binds 0.0.0.0, so the server refuses to start on the default
 # admin/admin credentials - MCP_ADMIN_PASSWORD is required, not optional.
@@ -16,7 +18,11 @@
 services:
   dev-playbook:
     build:
-      context: .
+      # Builds from pushed `main` on GitHub, NOT the local working tree:
+      # `docker compose build` clones the (public) repo, so local uncommitted
+      # edits are ignored until pushed. Pin `#main` to a tag/SHA for a
+      # reproducible build, e.g. ...dev-playbook.git#v1.1.0
+      context: https://github.com/arockiaraj1994/dev-playbook.git#main
       dockerfile: Dockerfile
     image: dev-playbook:1.1.0
     container_name: dev-playbook
@@ -26,7 +32,7 @@ services:
       # Loopback only: the dashboard password is weak by choice, so the
       # port must not be reachable from the LAN. Use "0.0.0.0:${MCP_PORT}:3000"
       # only alongside a strong MCP_ADMIN_PASSWORD.
-      - "127.0.0.1:${MCP_PORT:-3001}:3000"
+      - "127.0.0.1:${MCP_PORT:-8420}:3000"
 
     environment:
       MCP_HOST: "0.0.0.0"
@@ -37,6 +43,21 @@ services:
       # No default: compose fails loudly rather than the server exiting 1.
       MCP_ADMIN_PASSWORD: "${MCP_ADMIN_PASSWORD:?set MCP_ADMIN_PASSWORD in .env}"
       MCP_INACTIVE_DAYS: "${MCP_INACTIVE_DAYS:-2}"
+      # Storage backend. Default "sqlite" uses MCP_DB_PATH above. Set to
+      # "postgres" AND activate the postgres profile (below) to use the DB
+      # service. NOTE: inert until the Postgres backend lands - the server is
+      # SQLite-only today and does not yet read DB_BACKEND/DATABASE_URL. See
+      # Redmine #382. These names are provisional and may change with #382.
+      DB_BACKEND: "${DB_BACKEND:-sqlite}"
+      DATABASE_URL: "postgresql://playbook:${PG_PASSWORD:-playbook}@postgres:5432/playbook"
+
+    # Wait for Postgres only when the profile brought it up; still start
+    # without it (required: false, Compose 2.20+) so the default SQLite path
+    # is unaffected.
+    depends_on:
+      postgres:
+        condition: service_healthy
+        required: false
 
     volumes:
       # Metrics + auth SQLite. Named volume so `docker compose down` keeps
@@ -59,5 +80,42 @@ services:
     security_opt:
       - no-new-privileges:true
 
+  # Optional Postgres backend (Redmine #382). NOT started by a plain
+  # `docker compose up`: it is gated behind the "postgres" profile. Bring it
+  # up with `docker compose --profile postgres up -d`, or set
+  # COMPOSE_PROFILES=postgres in .env, and set DB_BACKEND=postgres so the
+  # server uses it (once #382 makes that live). Loopback-only, like the app.
+  postgres:
+    image: postgres:16-alpine
+    container_name: dev-playbook-postgres
+    restart: unless-stopped
+    profiles: ["postgres"]
+
+    ports:
+      # Loopback only. Published on 8432 (not the usual 5432) to avoid
+      # clashing with a Postgres already running on the host.
+      - "127.0.0.1:${PG_PORT:-8432}:5432"
+
+    environment:
+      POSTGRES_USER: playbook
+      # Defaults to "playbook" so the default `up` never fails on a missing
+      # var; set a strong PG_PASSWORD in .env before any non-local use.
+      POSTGRES_PASSWORD: "${PG_PASSWORD:-playbook}"
+      POSTGRES_DB: playbook
+
+    volumes:
+      - playbook-pg:/var/lib/postgresql/data
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U playbook -d playbook"]
+      interval: 10s
+      timeout: 3s
+      start_period: 10s
+      retries: 5
+
+    security_opt:
+      - no-new-privileges:true
+
 volumes:
   playbook-data:
+  playbook-pg:

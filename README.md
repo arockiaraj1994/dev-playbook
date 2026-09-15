@@ -7,26 +7,35 @@ a full set from the language template packs, then read them back on every task.
 Ships an MCP server (stdio or SSE) with local auth and issuable bearer tokens,
 a browser dashboard for authoring and telemetry, and a SQLite store both share.
 
-## Install as a Claude Code plugin
+## Quick start
 
-The one-command path. No server to run, no port, no bearer token:
+Two commands. Run whichever you need — they work independently.
 
+**1. Run the server (MCP + dashboard) with Docker:**
+
+```bash
+MCP_ADMIN_PASSWORD=changeme docker compose up -d
 ```
-/plugin marketplace add arockiaraj1994/dev-agent-playbook
-/plugin install dev-playbook@dev-playbook
+
+MCP at `http://localhost:8420/sse`, dashboard at `http://localhost:8420/dashboard/`.
+Change the password — the server refuses to start on `admin`.
+
+**2. Install the Claude Code plugin:**
+
+```bash
+claude plugin marketplace add arockiaraj1994/dev-playbook && claude plugin install dev-playbook@dev-playbook
 ```
 
-Restart Claude Code and you have the five tools, two skills, and hooks that put
-this repo's guardrails and definition of done in context without anyone asking.
-The plugin launches the server itself over stdio and keeps its database in the
-plugin's own data directory. It needs [`uv`](https://docs.astral.sh/uv/getting-started/installation/)
-on `PATH`, and nothing else.
+Then restart Claude Code (or run `/reload-plugins`). You get the five tools, two
+skills, and hooks. The plugin runs its own server over stdio — no port, no token —
+so it needs only [`uv`](https://docs.astral.sh/uv/getting-started/installation/) on
+`PATH`, **not** the Docker server from step 1. Prefer the interactive menu? Run
+`/plugin marketplace add arockiaraj1994/dev-playbook` then
+`/plugin install dev-playbook@dev-playbook` inside Claude Code.
 
-Pointing a team at a shared server, enforcement, and the rest of the settings
-are in [`plugins/dev-playbook/README.md`](plugins/dev-playbook/README.md).
-
-Cursor and Windsurf have no plugin system, so they use the manual MCP setup
-further down.
+Team setup (point the plugin at a shared server), enforcement, and the other
+settings live in [`plugins/dev-playbook/README.md`](plugins/dev-playbook/README.md).
+Cursor and Windsurf have no plugin system — use the manual MCP setup below.
 
 ## The tool surface
 
@@ -92,7 +101,7 @@ viewer (Formatted / Source / Code / Edit). Initial content ships as
 ```bash
 cd mcp
 uv sync
-uv run server.py            # HTTP + SSE on :3000, plus the dashboard
+uv run server.py            # HTTP + SSE on :8420, plus the dashboard
 uv run server.py --stdio    # MCP over stdio; no port, no dashboard
 ```
 
@@ -103,6 +112,9 @@ the Claude Code plugin launches; SSE is what a shared team instance runs.
 Or with Docker:
 
 ### Docker Compose (recommended)
+
+The [Quick start](#quick-start) one-liner is the fast path. To keep config in a
+file instead of passing it inline, copy the env template and set values there:
 
 ```bash
 cp .env.example .env      # set MCP_ADMIN_PASSWORD
@@ -115,22 +127,25 @@ docker compose up -d
 docker build -t dev-playbook .
 docker run -d \
   --name dev-playbook \
-  -p 127.0.0.1:3001:3000 \
+  -p 127.0.0.1:8420:3000 \
   -e MCP_ADMIN_PASSWORD=changeme \
   -v playbook-data:/data \
   --restart unless-stopped \
   dev-playbook
 ```
 
-Dashboard: `http://localhost:3001/dashboard/` · MCP (SSE): `http://localhost:3001/sse`
+Dashboard: `http://localhost:8420/dashboard/` · MCP (SSE): `http://localhost:8420/sse`
 
-Host port is 3001 because 3000 is commonly taken on a dev box; the container
-listens on 3000 internally. The port is published to `127.0.0.1` only.
+Host port is 8420: a dedicated port in a quiet band, clear of the popular dev
+defaults (3000, 5000, 5173, 8000, 8080, 9000) and of Redmine on 3000. One port
+serves both the MCP endpoint and the dashboard — they are paths on the same
+server. The container listens on 3000 internally; the port is published to
+`127.0.0.1` only.
 
 Get a bearer token for an MCP client:
 
 ```bash
-curl -s -X POST http://localhost:3001/auth/login \
+curl -s -X POST http://localhost:8420/auth/login \
   -H 'Content-Type: application/json' \
   -d '{"username":"admin","password":"<your MCP_ADMIN_PASSWORD>"}'
 ```
@@ -140,7 +155,7 @@ curl -s -X POST http://localhost:3001/auth/login \
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `MCP_HOST` | `127.0.0.1` | Bind address. Use `0.0.0.0` for LAN. |
-| `MCP_PORT` | `3000` | HTTP port. |
+| `MCP_PORT` | `8420` | HTTP port (serves both MCP and the dashboard). |
 | `MCP_CONFIG` | `mcp/config.toml` | Override config file path. |
 | `MCP_DB_PATH` | `mcp/data/metrics.db` | SQLite file for usage metrics + auth. |
 | `MCP_INACTIVE_DAYS` | `2` | Days without a tool call before a user is "inactive". |

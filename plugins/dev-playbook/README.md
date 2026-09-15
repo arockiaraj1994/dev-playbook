@@ -7,7 +7,7 @@ If a repo has no standards yet, the plugin scaffolds them.
 ## Install
 
 ```
-/plugin marketplace add arockiaraj1994/dev-agent-playbook
+/plugin marketplace add arockiaraj1994/dev-playbook
 /plugin install dev-playbook@dev-playbook
 ```
 
@@ -40,7 +40,7 @@ Configure from `/plugin` → dev-playbook → Configure.
 | Setting | Default | For |
 |---|---|---|
 | `enforce_standards` | `false` | Block the first `Write`/`Edit` when the repo has no standards, instead of only warning. See below. |
-| `server_url` | *(empty)* | Team mode: point at a shared dev-playbook server, e.g. `http://localhost:3001`. |
+| `server_url` | *(empty)* | Team mode: point at a shared dev-playbook server, e.g. `http://localhost:8420`. |
 | `token` | *(empty)* | Bearer token for that server, from `POST /auth/login`. Only when it has auth on. |
 | `server_path` | *(empty)* | Path to the repo's `mcp/` directory, if the plugin cannot find it next to itself. |
 
@@ -72,7 +72,7 @@ that server advertises.
 If the bridge gives you trouble, the manual path still works and is unaffected:
 
 ```
-claude mcp add --transport sse dev-playbook http://localhost:3001/sse \
+claude mcp add --transport sse dev-playbook http://localhost:8420/sse \
   --header "Authorization: Bearer <token>"
 ```
 

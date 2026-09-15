@@ -6,8 +6,8 @@
     "name": "Arockiaraj Rayappan",
     "email": "arockiaraj1994@gmail.com"
   },
-  "homepage": "https://github.com/arockiaraj1994/dev-agent-playbook",
-  "repository": "https://github.com/arockiaraj1994/dev-agent-playbook",
+  "homepage": "https://github.com/arockiaraj1994/dev-playbook",
+  "repository": "https://github.com/arockiaraj1994/dev-playbook",
   "license": "Apache-2.0",
   "keywords": [
     "standards",
@@ -20,7 +20,7 @@
     "server_url": {
       "type": "string",
       "title": "Shared server URL",
-      "description": "Team mode: the base URL of a shared dev-playbook server, e.g. http://localhost:3001. Leave empty to run a local server on stdio, which needs no infrastructure.",
+      "description": "Team mode: the base URL of a shared dev-playbook server, e.g. http://localhost:8420. Leave empty to run a local server on stdio, which needs no infrastructure.",
       "default": ""
     },
     "token": {

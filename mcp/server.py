@@ -8,7 +8,7 @@ DEFINITIONS and dispatch; this module concatenates and routes them. The
 dashboard edits the same store live.
 
 Run:
-  uv run server.py            # HTTP + SSE on MCP_PORT (default 3000), + dashboard
+  uv run server.py            # HTTP + SSE on MCP_PORT (default 8420), + dashboard
   uv run server.py --stdio    # MCP over stdio; no port, no dashboard
 
 Both transports share the same `server` instance and _initialization_options(),
@@ -29,7 +29,7 @@ Config (optional): config.toml next to server.py, or path in MCP_CONFIG.
     "admin", which the server refuses to start on when MCP_HOST=0.0.0.0.
 
 Other env vars:
-  MCP_PORT - HTTP port (default 3000)
+  MCP_PORT - HTTP port (default 8420; serves both MCP and the dashboard)
   MCP_HOST - bind host (default 127.0.0.1; 0.0.0.0 for LAN)
   MCP_DB_PATH - sqlite DB (default <repo>/mcp/data/metrics.db)
   MCP_INACTIVE_DAYS - "inactive" threshold (default 2)
@@ -105,7 +105,7 @@ logger = logging.getLogger("dev-playbook")
 
 SERVER_LABEL = os.getenv("MCP_SERVER_LABEL", "dev-playbook")
 SERVER_VERSION = "1.1.0"
-DEFAULT_PORT = 3000
+DEFAULT_PORT = 8420
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_INACTIVE_DAYS = 2
 _DEFAULT_DB_REL = Path("data") / "metrics.db"

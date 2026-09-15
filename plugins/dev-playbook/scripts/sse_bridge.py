@@ -88,7 +88,7 @@ def main(argv: list[str] | None = None) -> int:
     except ValueError as exc:
         logger.error(
             "%s.\n  Fix: set the plugin's 'server_url' option to your shared "
-            "dev-playbook server, e.g. http://localhost:3001 - or clear it to "
+            "dev-playbook server, e.g. http://localhost:8420 - or clear it to "
             "run a local server instead.",
             exc,
         )
