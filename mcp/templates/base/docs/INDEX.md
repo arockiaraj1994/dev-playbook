@@ -14,11 +14,11 @@ tags: [index]
 
 | Topic | Document |
 | --- | --- |
-| MUST / MUST NOT rules | `core/guardrails.md` |
+| MUST / MUST NOT rules | `guardrails.md` |
 | Module boundaries | `ARCHITECTURE.md` |
-| Git, review and release | `core/git.md` |
-| Completion checklist | `core/definition-of-done.md` |
-| Domain terms | `core/glossary.md` |
+| Git, review and release | `git.md` |
+| Completion checklist | `gates/definition-of-done.md` |
+| Domain terms | `glossary.md` |
 
 ## Languages
 

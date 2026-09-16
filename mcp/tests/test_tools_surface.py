@@ -18,22 +18,27 @@ def open_policy():
 
 
 EXPECTED = {
-    "playbook_start_task",
-    "playbook_get_standard",
+    "playbook_get_agents",
+    "playbook_get_guardrails",
+    "playbook_get_standards",
+    "playbook_get_patterns",
+    "playbook_get_workflow",
+    "playbook_get_gates",
     "playbook_find_standards",
     "playbook_list_templates",
     "playbook_scaffold_standards",
 }
 
 
-async def test_the_five_tools_are_advertised():
+async def test_all_tools_are_advertised():
     names = {t.name for t in await server.list_tools()}
     assert names == EXPECTED
 
 
-async def test_the_entry_point_is_listed_first():
+async def test_the_read_tools_come_first():
     tools = await server.list_tools()
-    assert tools[0].name == "playbook_start_task"
+    assert tools[0].name == "playbook_get_agents"
+    assert tools[-1].name == "playbook_scaffold_standards"
 
 
 async def test_every_tool_is_annotated():
@@ -64,10 +69,23 @@ async def test_every_tool_has_a_description_with_an_example():
         assert "Example:" in tool.description or "example" in tool.description.lower()
 
 
+async def test_descriptions_do_not_reuse_ai_or_agent_persona_words():
+    """The surface was rewritten to name concrete documents, not AI framing."""
+    banned = ("ai agent", "you are a senior", "before writing or changing")
+    for tool in await server.list_tools():
+        lowered = tool.description.lower()
+        for phrase in banned:
+            assert phrase not in lowered, (tool.name, phrase)
+
+
 async def test_required_params_are_declared():
     required = {t.name: set(t.inputSchema.get("required", [])) for t in await server.list_tools()}
-    assert required["playbook_start_task"] == {"project", "intent"}
-    assert required["playbook_get_standard"] == {"project", "ref"}
+    assert required["playbook_get_agents"] == {"project"}
+    assert required["playbook_get_guardrails"] == {"project"}
+    assert required["playbook_get_standards"] == {"project", "language"}
+    assert required["playbook_get_patterns"] == {"project"}
+    assert required["playbook_get_workflow"] == {"project"}
+    assert required["playbook_get_gates"] == {"project"}
     assert required["playbook_find_standards"] == {"project"}
     assert required["playbook_scaffold_standards"] == {"project", "languages"}
     assert required["playbook_list_templates"] == set()
@@ -82,7 +100,7 @@ async def test_disabling_scaffolding_hides_it():
     POLICY.scaffold_enabled = False
     names = {t.name for t in await server.list_tools()}
     assert "playbook_scaffold_standards" not in names
-    assert len(names) == 4
+    assert len(names) == 8
 
 
 async def test_unknown_tool_names_the_real_ones(monkeypatch):
@@ -90,12 +108,12 @@ async def test_unknown_tool_names_the_real_ones(monkeypatch):
     ctx = server._CallContext()
     result = await server._dispatch_typed("playbook_nope", {}, ctx)
     assert ctx.status == "error"
-    assert "playbook_start_task" in result[0].text
+    assert "playbook_get_agents" in result[0].text
 
 
 async def test_dispatch_without_a_store_fails_cleanly(monkeypatch):
     monkeypatch.setattr(server, "standards_store", None)
     ctx = server._CallContext()
-    result = await server._dispatch_typed("playbook_start_task", {}, ctx)
+    result = await server._dispatch_typed("playbook_get_agents", {}, ctx)
     assert ctx.status == "error"
     assert "not ready" in result[0].text

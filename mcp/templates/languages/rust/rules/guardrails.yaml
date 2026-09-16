@@ -1,4 +1,4 @@
-contributes_to: core/guardrails.md
+contributes_to: guardrails.md
 section: Rust
 
 rules:

@@ -21,8 +21,8 @@ groups:
 outro: |
   ## Pointers
 
-  - `core/guardrails.md` - always-on rules that are not boundary rules.
-  - `core/git.md` - how a change reaches the default branch.
+  - `guardrails.md` - always-on rules that are not boundary rules.
+  - `git.md` - how a change reaches the default branch.
   - `workflows/new-feature.md` - the order to build in.
 rules:
   - id: no-cyclic-dependencies

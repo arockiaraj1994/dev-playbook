@@ -455,8 +455,7 @@ def build_dashboard_routes(
     # -- Standards (corpus health, SQLite-backed) ----------------------------
 
     _GROUP_ORDER = [
-        "",  # root-level files (AGENTS.md, INDEX.md, README.md, ...) share one group
-        "core",
+        "",  # root-level files (AGENTS.md, guardrails.md, git.md, glossary.md, ...) share one group
         "languages",
         "patterns",
         "workflows",
@@ -658,7 +657,7 @@ def build_dashboard_routes(
         owner_labels = {d.doc: d.display_label for d in scaffold_service.get_base().rule_docs}
         sections = []
         for doc in pack.rule_docs:
-            if (doc.doc == "core/git.md") != git:
+            if (doc.doc == "git.md") != git:
                 continue
             sections.append((doc.display_label, doc))
         if not git:
@@ -797,7 +796,7 @@ def build_dashboard_routes(
         selected = set(state["language_rules"])
         if not selected & {r.id for r in pack.all_rules}:
             selected |= pack.default_rule_ids() - {
-                r.id for d in pack.rule_docs if d.doc == "core/git.md" for r in d.rules
+                r.id for d in pack.rule_docs if d.doc == "git.md" for r in d.rules
             }
         state["language_rules"] = sorted(selected)
 
@@ -852,7 +851,7 @@ def build_dashboard_routes(
                 field="git_rule",
                 rule_help=_rule_help(sections),
                 heading="Git rules",
-                blurb="How a change reaches the default branch. These become core/git.md.",
+                blurb="How a change reaches the default branch. These become git.md.",
             ),
         )
 
@@ -1264,7 +1263,8 @@ _RULE_CATALOG: dict[str, tuple[str, str]] = {
     "required-file": (
         "hard",
         "A file every standards project must ship "
-        "(AGENTS.md, ARCHITECTURE.md, core/*, gates/README.md).",
+        "(AGENTS.md, ARCHITECTURE.md, guardrails.md, git.md, gates/definition-of-done.md, "
+        "glossary.md, gates/README.md).",
     ),
     "required-workflow": (
         "hard",

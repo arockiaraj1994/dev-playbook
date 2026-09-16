@@ -23,7 +23,7 @@ Requires [`uv`](https://docs.astral.sh/uv/getting-started/installation/) on
 
 | Component | Does |
 |---|---|
-| **MCP server** (5 tools) | `playbook_start_task`, `playbook_get_standard`, `playbook_find_standards`, `playbook_list_templates`, `playbook_scaffold_standards` |
+| **MCP server** (9 tools) | `playbook_get_agents`, `playbook_get_guardrails`, `playbook_get_standards`, `playbook_get_patterns`, `playbook_get_workflow`, `playbook_get_gates`, `playbook_find_standards`, `playbook_list_templates`, `playbook_scaffold_standards` |
 | **`using-standards`** skill | Model-invoked. How to read the standards, and how to name the project on every call. |
 | **`/dev-playbook:scaffold-standards`** | Walks a repo with no standards: detect languages, fill placeholders from the source, preview, write. |
 | **SessionStart hook** | Puts this project's guardrails in context at session start, without anyone having to ask. |

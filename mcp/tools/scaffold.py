@@ -36,22 +36,21 @@ NAME = "playbook_scaffold_standards"
 DEFINITIONS: list[Tool] = [
     Tool(
         name=NAME,
-        title="Create standards for a project",
+        title="Create a project's standards from template packs",
         description=(
-            "Create a new standards project for an existing codebase that does "
-            "not have one yet: guardrails, definition of done, git practice, "
-            "per-language rules and the workflow documents, composed from the "
-            "template packs. Call playbook_list_templates first to get valid "
-            "language ids and to learn which placeholders a pack requires.\n\n"
-            "Run it with dry_run=true first and show the user the manifest. "
-            "Only call it with dry_run=false once they have agreed - it writes.\n\n"
-            "Example: the repo is a Java service in package com.acme.billing, so "
-            'call playbook_scaffold_standards(project="billing", languages=["java"], '
+            "Creates standards for a codebase that has none: writes AGENTS.md, "
+            "ARCHITECTURE.md, guardrails.md, git.md, the definition of done, the "
+            "required workflows and per-language rules, composed from the template "
+            "packs. Call playbook_list_templates first for valid language ids and "
+            "the placeholders a pack needs.\n\n"
+            "Run dry_run=true first, show the user the manifest, and write "
+            "(dry_run=false) only once they agree.\n\n"
+            "Example: a Java service in package com.acme.billing - "
+            'playbook_scaffold_standards(project="billing", languages=["java"], '
             'placeholders={"package": "com.acme.billing"}, dry_run=true).\n\n'
-            "Limitations: it creates a project, it never updates one. Scaffolding "
-            "over an existing project fails rather than merging. Omit rule_ids and "
-            "workflow_ids to take the pack defaults, which is normally what you "
-            "want; rules marked locked are always included either way."
+            "Creates only - it never merges into an existing project. Omit rule_ids "
+            "and workflow_ids for the pack defaults; locked rules are always "
+            "included either way."
         ),
         annotations=WRITE_ADDITIVE,
         inputSchema={
@@ -125,7 +124,8 @@ def _authorize() -> str | None:
         return (
             "Scaffolding is disabled on this server ([enable] scaffold = false in "
             "config.toml). An administrator has to turn it on; the read tools "
-            "(playbook_get_standard, playbook_find_standards) still work."
+            "(playbook_get_guardrails, playbook_find_standards and the other "
+            "playbook_get_* tools) still work."
         )
     if not POLICY.auth_enabled:
         # Auth off means a single trusted local operator - there is no role to
@@ -256,10 +256,9 @@ def _created_body(project: str, result: scaffold_service.ScaffoldResult) -> str:
             "",
             "## Next Calls",
             "",
-            f'- Start work under them: `playbook_start_task(project="{project}", '
+            f'- Read the guardrails: `playbook_get_guardrails(project="{project}")`',
+            f'- Get the workflow for a task: `playbook_get_workflow(project="{project}", '
             'intent="<what you are about to do>")`',
-            f'- Read the guardrails: `playbook_get_standard(project="{project}", '
-            'ref="guardrails")`',
             "",
             "Tell the user the project was created and that they can edit it from "
             "the dashboard's Standards page.",

@@ -168,28 +168,39 @@ class DashboardSummary:
 
 # Historical tool names collapse onto the current playbook_* names so the
 # dashboard keeps showing one row per tool across every rename. Recorded calls
-# are history and must not be orphaned, so this map only ever grows - v1.1.0
-# added the v0.8/0.9 three (playbook_start / _get / _find) as sources, having
-# retargeted every entry onto the current <verb>_<resource> names.
+# are history and must not be orphaned, so this map only ever grows.
+#
+# v2.0.0 split the single read tool (playbook_get_standard) into one tool per
+# artifact family, and retired playbook_start_task. Names with a clear successor
+# are retargeted onto it. Generic single-doc reads (get_doc, the retired
+# playbook_get_standard, ...) had no per-call record of what they fetched, so a
+# split cannot be attributed - they collapse onto one representative getter
+# (playbook_get_agents) to keep one row rather than orphaning them; they still
+# land in the "get" family below. The start_* names stay on playbook_start_task:
+# those calls really were entry-point calls, and keeping them there keeps the
+# historical "start" family honest as it trends to zero post-2.0.
 _LEGACY_TOOL_MAP = {
-    # → playbook_start_task
+    # → playbook_start_task (historical entry point; no current successor tool)
     "start_task": "playbook_start_task",
     "start_requirement": "playbook_start_task",
     "playbook_start_requirement": "playbook_start_task",
     "playbook_start": "playbook_start_task",
-    # → playbook_get_standard
-    "get_doc": "playbook_get_standard",
-    "playbook_get_doc": "playbook_get_standard",
-    "get_requirement": "playbook_get_standard",
-    "get_guardrails": "playbook_get_standard",
-    "get_agents_md": "playbook_get_standard",
-    "get_architecture": "playbook_get_standard",
-    "get_language_rules": "playbook_get_standard",
-    "get_pattern": "playbook_get_standard",
-    "get_skill": "playbook_get_standard",
-    "get_workflow": "playbook_get_standard",
-    "get_gate": "playbook_get_standard",
-    "playbook_get": "playbook_get_standard",
+    # split reads → their per-artifact successor
+    "get_guardrails": "playbook_get_guardrails",
+    "get_gate": "playbook_get_gates",
+    "get_pattern": "playbook_get_patterns",
+    "get_workflow": "playbook_get_workflow",
+    "get_language_rules": "playbook_get_standards",
+    "get_agents_md": "playbook_get_agents",
+    "get_architecture": "playbook_get_agents",
+    # generic single-doc reads with no specific successor → the identity/context
+    # getter, so they collapse to one row and stay in the "get" family
+    "get_doc": "playbook_get_agents",
+    "playbook_get_doc": "playbook_get_agents",
+    "playbook_get_standard": "playbook_get_agents",
+    "get_requirement": "playbook_get_agents",
+    "get_skill": "playbook_get_agents",
+    "playbook_get": "playbook_get_agents",
     # → playbook_find_standards
     "find_rules": "playbook_find_standards",
     "search_rules": "playbook_find_standards",
@@ -208,10 +219,13 @@ _CANONICAL_TOOL_SQL = (
 )
 
 # Family classification on the canonical name (search / get / start) for the
-# by-tool-family breakdown. LIKE fallbacks keep truly unknown names counted.
+# by-tool-family breakdown. Since v2.0.0 the "get" family is every per-artifact
+# reader (playbook_get_*); "start" holds only the retired entry point, so it is
+# historical and trends to zero. The three families stay mutually exclusive - no
+# canonical name matches more than one - so summing them never double-counts.
 _FAMILY_SEARCH_SQL = f"({_CANONICAL_TOOL_SQL}) = 'playbook_find_standards'"
-_FAMILY_GET_SQL = f"({_CANONICAL_TOOL_SQL}) = 'playbook_get_standard'"
-_FAMILY_START_SQL = f"({_CANONICAL_TOOL_SQL}) = 'playbook_start_task' OR tool_name LIKE 'start%'"
+_FAMILY_GET_SQL = f"({_CANONICAL_TOOL_SQL}) LIKE 'playbook_get_%'"
+_FAMILY_START_SQL = f"({_CANONICAL_TOOL_SQL}) = 'playbook_start_task'"
 
 
 def _now() -> str:

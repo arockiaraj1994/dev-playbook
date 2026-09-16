@@ -8,6 +8,33 @@ changes after 1.0.0 will bump the **major**.
 
 ## [Unreleased]
 
+### Changed - BREAKING: one read tool per artifact family (MCP server v2.0.0)
+
+The five-tool surface is replaced by one read tool per document family, so each
+tool names the concrete documents it returns instead of "a standards document".
+The `core/` directory is gone: `guardrails.md`, `git.md` and `glossary.md` move
+to the project root, and `definition-of-done.md` moves under `gates/`.
+
+- **New read tools:** `playbook_get_agents` (AGENTS.md + ARCHITECTURE.md +
+  glossary), `playbook_get_guardrails` (guardrails + git), `playbook_get_standards`
+  (a language's rules; `language` is required), `playbook_get_patterns`,
+  `playbook_get_workflow` (matches an `intent`, or fetches by `name`), and
+  `playbook_get_gates` (definition of done + verify scripts).
+  `playbook_find_standards`, `playbook_list_templates` and
+  `playbook_scaffold_standards` are unchanged.
+- **Removed** `playbook_start_task` (its intent matching is now
+  `playbook_get_workflow(intent=…)`) and `playbook_get_standard` (the `ref`
+  grammar - each getter addresses its own family).
+- **Removed the `core/` grouping** across the templates, the composition engine,
+  the `ref`/Next-Calls routing, the dashboard grouping, the plugin hooks and the
+  seed.
+- **De-AI'd the generated framing:** the base `AGENTS.md` and the server
+  instructions no longer address an "AI agent" or open with "You are a senior
+  engineer".
+- The Claude Code plugin is bumped to **0.2.0**; its SessionStart and PreToolUse
+  hooks now read `guardrails.md` and `gates/definition-of-done.md`.
+  (Redmine #412)
+
 ### Changed
 
 - **Default credentials are now admin/admin out of the box.** Removed the

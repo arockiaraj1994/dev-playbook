@@ -1,4 +1,4 @@
-contributes_to: core/definition-of-done.md
+contributes_to: gates/definition-of-done.md
 section: Kotlin
 
 rules:

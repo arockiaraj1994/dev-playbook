@@ -120,7 +120,7 @@ async def test_tools_page_shows_call_counts(app_with_data) -> None:
     body = r.text
     # Aggregates fold historical names onto the current playbook_* names.
     assert "playbook_find_standards" in body
-    assert "playbook_get_standard" in body
+    assert "playbook_get_patterns" in body
     assert "patterns/foo.md" in body  # doc fetches table
 
 

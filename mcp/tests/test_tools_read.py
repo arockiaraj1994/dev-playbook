@@ -1,7 +1,13 @@
-"""Tests for playbook_get_standard, playbook_find_standards, playbook_start_task."""
+"""Tests for the per-artifact read tools and playbook_find_standards.
+
+Surface: playbook_get_agents / _guardrails / _standards / _patterns / _workflow
+/ _gates, plus playbook_find_standards. The old playbook_get_standard (ref
+grammar) and playbook_start_task were retired when the surface split per family.
+"""
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -9,7 +15,7 @@ import pytest
 
 import scaffold_service
 from standards_store import StandardsStore
-from tools import find, get, start
+from tools import agents, find, gates, guardrails, patterns, standards, workflow
 
 JAVA = {"package": "com.acme.billing"}
 
@@ -41,71 +47,146 @@ async def run(module, store: StandardsStore, **args) -> tuple[str, Ctx]:
 
 
 # ---------------------------------------------------------------------------
-# playbook_get_standard
+# playbook_get_agents
 # ---------------------------------------------------------------------------
 
 
-async def test_get_by_alias(store: StandardsStore):
-    body, ctx = await run(get, store, project="billing", ref="guardrails")
+async def test_agents_returns_identity_and_context(store: StandardsStore):
+    body, ctx = await run(agents, store, project="billing")
     assert ctx.status == "ok"
-    assert ctx.doc_path == "core/guardrails.md"
-    assert "core/guardrails.md" in body
+    assert "AGENTS.md" in body
+    assert "ARCHITECTURE.md" in body
+    assert "glossary.md" in body
 
 
-async def test_get_by_exact_path(store: StandardsStore):
-    by_alias, _ = await run(get, store, project="billing", ref="guardrails")
-    by_path, _ = await run(get, store, project="billing", ref="core/guardrails.md")
-    assert by_alias == by_path
-
-
-async def test_get_workflow_by_prefix(store: StandardsStore):
-    body, ctx = await run(get, store, project="billing", ref="workflow:bug-fix")
-    assert ctx.doc_path == "workflows/bug-fix.md"
-    assert "bug" in body.lower()
-
-
-async def test_get_script_is_fenced_as_shell(store: StandardsStore):
-    rows = await store.list_files("billing")
-    script = next(r for r in rows if r.kind == "script")
-    body, ctx = await run(get, store, project="billing", ref=script.relative_path)
-    assert ctx.status == "ok"
-    assert "```sh" in body
-
-
-async def test_project_name_is_matched_case_insensitively(store: StandardsStore):
-    _body, ctx = await run(get, store, project="BILLING", ref="guardrails")
+async def test_agents_case_insensitive_project(store: StandardsStore):
+    _body, ctx = await run(agents, store, project="BILLING")
     assert ctx.status == "ok"
 
 
-async def test_unknown_project_names_what_exists(store: StandardsStore):
-    body, ctx = await run(get, store, project="nope", ref="guardrails")
+async def test_agents_unknown_project_steers_to_scaffolding(store: StandardsStore):
+    body, ctx = await run(agents, store, project="ghost")
     assert ctx.status == "error"
     assert "billing" in body
     assert "playbook_scaffold_standards" in body
 
 
-async def test_empty_store_tells_you_to_scaffold(tmp_path: Path):
-    empty = StandardsStore(tmp_path / "empty.db")
-    await empty.init()
-    body, ctx = await run(get, empty, project="anything", ref="guardrails")
+# ---------------------------------------------------------------------------
+# playbook_get_guardrails
+# ---------------------------------------------------------------------------
+
+
+async def test_guardrails_returns_guardrails_and_git(store: StandardsStore):
+    body, ctx = await run(guardrails, store, project="billing")
+    assert ctx.status == "ok"
+    assert "guardrails.md" in body
+    assert "git.md" in body
+    assert "core/" not in body
+
+
+# ---------------------------------------------------------------------------
+# playbook_get_standards (language required)
+# ---------------------------------------------------------------------------
+
+
+async def test_standards_requires_language(store: StandardsStore):
+    body, ctx = await run(standards, store, project="billing")
     assert ctx.status == "error"
-    assert "no standards projects at all" in body
-    assert "playbook_list_templates" in body
+    assert "needs a `language`" in body
+    assert "java" in body
 
 
-async def test_unresolvable_ref_lists_what_the_project_has(store: StandardsStore):
-    body, ctx = await run(get, store, project="billing", ref="nonsense")
+async def test_standards_returns_language_docs(store: StandardsStore):
+    body, ctx = await run(standards, store, project="billing", language="java")
+    assert ctx.status == "ok"
+    assert "languages/java/standards.md" in body
+    assert "languages/java/testing.md" in body
+
+
+async def test_standards_unknown_language_lists_available(store: StandardsStore):
+    body, ctx = await run(standards, store, project="billing", language="cobol")
     assert ctx.status == "error"
-    assert "guardrails" in body
-    assert "playbook_find_standards" in body
+    assert "java" in body
 
 
-async def test_every_listed_ref_actually_resolves(store: StandardsStore):
-    """The miss text advertises refs; each one has to work, or it is a dead end."""
-    from tools.refs import format_ref
+# ---------------------------------------------------------------------------
+# playbook_get_patterns (no language)
+# ---------------------------------------------------------------------------
 
-    for row in await store.list_files("billing"):
-        assert await get.resolve(store, "billing", format_ref(row.relative_path)) is not None
+
+async def test_patterns_lists_all(store: StandardsStore):
+    body, ctx = await run(patterns, store, project="billing")
+    assert ctx.status == "ok"
+    assert "patterns" in body.lower()
+    assert "repository" in body
+
+
+async def test_patterns_reads_one_by_name(store: StandardsStore):
+    body, ctx = await run(patterns, store, project="billing", name="repository")
+    assert ctx.status == "ok"
+    assert ctx.doc_path is not None and ctx.doc_path.startswith("patterns/")
+    assert "repository" in body.lower()
+
+
+async def test_patterns_unknown_name_lists_available(store: StandardsStore):
+    body, ctx = await run(patterns, store, project="billing", name="nonsense")
+    assert ctx.status == "error"
+    assert "repository" in body
+
+
+# ---------------------------------------------------------------------------
+# playbook_get_workflow (intent | name | list)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("intent", "expected"),
+    [
+        ("fix bug in the retry path", "workflows/bug-fix.md"),
+        ("the service is broken on startup", "workflows/bug-fix.md"),
+        ("add a new feature for exports", "workflows/new-feature.md"),
+        ("upgrade a dependency", "workflows/dependency-upgrade.md"),
+    ],
+)
+async def test_workflow_matches_from_triggers(store: StandardsStore, intent: str, expected: str):
+    _body, ctx = await run(workflow, store, project="billing", intent=intent)
+    assert ctx.doc_path == expected
+
+
+async def test_workflow_by_name(store: StandardsStore):
+    body, ctx = await run(workflow, store, project="billing", name="bug-fix")
+    assert ctx.doc_path == "workflows/bug-fix.md"
+    assert "bug" in body.lower()
+
+
+async def test_workflow_list_without_args(store: StandardsStore):
+    body, ctx = await run(workflow, store, project="billing")
+    assert ctx.status == "ok"
+    assert "bug-fix" in body
+
+
+async def test_workflow_no_match_lists_available(store: StandardsStore):
+    body, ctx = await run(workflow, store, project="billing", intent="xyzzy")
+    assert ctx.status == "error"
+    assert "bug-fix" in body
+
+
+# ---------------------------------------------------------------------------
+# playbook_get_gates
+# ---------------------------------------------------------------------------
+
+
+async def test_gates_returns_dod_and_verify_scripts(store: StandardsStore):
+    body, ctx = await run(gates, store, project="billing")
+    assert ctx.status == "ok"
+    assert "gates/definition-of-done.md" in body
+    assert "verify-java.sh" in body
+
+
+async def test_gates_language_narrows_verify_script(store: StandardsStore):
+    body, ctx = await run(gates, store, project="billing", language="java")
+    assert ctx.status == "ok"
+    assert "verify-java.sh" in body
 
 
 # ---------------------------------------------------------------------------
@@ -128,7 +209,7 @@ async def test_find_truncation_says_how_to_see_more(store: StandardsStore):
 
 async def test_find_ranks_the_obvious_document_first(store: StandardsStore):
     _body, ctx = await run(find, store, project="billing", query="definition of done")
-    assert ctx.top_result_path == "core/definition-of-done.md"
+    assert ctx.top_result_path == "gates/definition-of-done.md"
     assert ctx.top_result_score and ctx.top_result_score > 0
 
 
@@ -137,11 +218,11 @@ async def test_find_records_the_query_for_telemetry(store: StandardsStore):
     assert ctx.query == "commit message"
 
 
-async def test_find_type_filter_restricts_to_a_directory(store: StandardsStore):
+async def test_find_type_filter_restricts_to_a_family(store: StandardsStore):
     body, ctx = await run(find, store, project="billing", type="workflow", top_k=50)
     assert ctx.status == "ok"
-    assert "workflow:bug-fix" in body
-    assert "guardrails" not in body
+    assert "playbook_get_workflow" in body
+    assert "guardrails.md" not in body
 
 
 async def test_find_no_match_suggests_widening(store: StandardsStore):
@@ -156,67 +237,31 @@ async def test_find_top_k_is_clamped(store: StandardsStore):
 
 
 # ---------------------------------------------------------------------------
-# playbook_start_task
+# Next Calls route to real, working tool calls
 # ---------------------------------------------------------------------------
 
-
-@pytest.mark.parametrize(
-    ("intent", "expected"),
-    [
-        ("fix bug in the retry path", "workflows/bug-fix.md"),
-        ("the service is broken on startup", "workflows/bug-fix.md"),
-        ("add a new feature for exports", "workflows/new-feature.md"),
-        ("upgrade a dependency", "workflows/dependency-upgrade.md"),
-    ],
-)
-async def test_start_matches_the_workflow_from_its_triggers(
-    store: StandardsStore, intent: str, expected: str
-):
-    _body, ctx = await run(start, store, project="billing", intent=intent)
-    assert ctx.doc_path == expected
+_MODULES = {m.NAME: m for m in (agents, guardrails, standards, patterns, workflow, gates)}
+_CALL_RE = re.compile(r"(playbook_get_\w+)\(([^)]*)\)")
 
 
-async def test_start_returns_guardrails_and_the_workflow(store: StandardsStore):
-    body, ctx = await run(start, store, project="billing", intent="fix bug")
-    assert ctx.status == "ok"
-    assert "core/guardrails.md" in body
-    assert "workflows/bug-fix.md" in body
-    assert "Next Calls" in body
+def _parse_args(arg_text: str) -> dict:
+    return {k: v for k, v in re.findall(r'(\w+)="([^"]*)"', arg_text)}
 
 
-async def test_start_guardrails_are_byte_identical_to_get(store: StandardsStore):
-    """The duplication issue #380 found had crept back twice. Composing
-    get.render_ref is what stops it; this asserts the composition happened."""
-    started, _ = await run(start, store, project="billing", intent="fix bug")
-    fetched, _ = await run(get, store, project="billing", ref="guardrails")
-    assert fetched in started
-
-
-async def test_start_workflow_body_is_byte_identical_to_get(store: StandardsStore):
-    started, _ = await run(start, store, project="billing", intent="fix bug")
-    fetched, _ = await run(get, store, project="billing", ref="workflow:bug-fix")
-    assert fetched in started
-
-
-async def test_start_next_calls_resolve(store: StandardsStore):
-    """A Next Call the model follows verbatim has to be a call that works."""
-    import re
-
-    body, _ = await run(start, store, project="billing", intent="fix bug")
-    refs = re.findall(r'playbook_get_standard\(project="billing", ref="([^"]+)"\)', body)
-    assert refs
-    for ref in refs:
-        assert await get.resolve(store, "billing", ref) is not None
-
-
-async def test_start_without_a_match_says_so_and_lists_workflows(store: StandardsStore):
-    body, ctx = await run(start, store, project="billing", intent="xyzzy")
-    assert ctx.doc_path is None
-    assert "No matching workflow" in body
-    assert "workflow:bug-fix" in body
-
-
-async def test_start_on_unknown_project_steers_to_scaffolding(store: StandardsStore):
-    body, ctx = await run(start, store, project="ghost", intent="fix bug")
-    assert ctx.status == "error"
-    assert "playbook_scaffold_standards" in body
+async def test_find_list_next_calls_resolve(store: StandardsStore):
+    """Every call the list prints has to dispatch to a real tool without error."""
+    body, _ = await run(find, store, project="billing", top_k=50)
+    calls = _CALL_RE.findall(body)
+    assert calls
+    seen = 0
+    for tool, arg_text in calls:
+        module = _MODULES.get(tool)
+        if module is None:
+            continue
+        args = _parse_args(arg_text)
+        ctx = Ctx()
+        result = await module.dispatch(module.NAME, args, ctx, store)
+        assert result is not None
+        assert ctx.status == "ok", (tool, args, result[0].text[:120])
+        seen += 1
+    assert seen

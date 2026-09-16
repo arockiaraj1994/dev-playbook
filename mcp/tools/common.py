@@ -11,7 +11,7 @@ from dataclasses import dataclass
 
 from mcp.types import TextContent, ToolAnnotations
 
-from standards_store import StandardsStore
+from standards_store import FileRow, StandardsStore
 
 # ---------------------------------------------------------------------------
 # Annotations
@@ -193,21 +193,72 @@ async def unknown_project(store: StandardsStore, project: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Next Calls
+# Document rendering
 #
-# Every response ends by naming the calls that make sense next, written as the
-# literal tool call so the model can follow one verbatim.
+# render_ref is the single place a document body is formatted. Every getter
+# composes it rather than formatting its own, so the same document reads
+# identically whichever tool returned it.
 # ---------------------------------------------------------------------------
 
 
-def next_calls(project: str, refs: list[tuple[str, str]]) -> str:
-    if not refs:
+def render_ref(row: FileRow) -> str:
+    """The canonical body for one document."""
+    header = f"# {row.title}"
+    if row.description:
+        header += f"\n\n{row.description}"
+    location = f"`{row.relative_path}` in project `{row.project}`"
+    if row.kind == "script":
+        return "\n".join([header, "", location, "", "```sh", row.body.rstrip(), "```"])
+    return "\n".join([header, "", location, "", "---", "", row.body.strip()])
+
+
+# ---------------------------------------------------------------------------
+# Path -> tool-call routing / Next Calls
+#
+# Each document family is served by its own tool, so a "read this next" hint
+# has to name the right tool for the path. route_call maps a stored
+# relative_path onto the literal call that returns it, and next_calls renders a
+# block of them the model can follow verbatim.
+# ---------------------------------------------------------------------------
+
+_AGENTS_DOCS = {"AGENTS.md", "ARCHITECTURE.md", "glossary.md", "INDEX.md", "README.md"}
+_GUARDRAILS_DOCS = {"guardrails.md", "git.md"}
+
+
+def _call(project: str, tool: str, **kwargs: str) -> str:
+    args = ", ".join([f'project="{project}"', *(f'{k}="{v}"' for k, v in kwargs.items())])
+    return f"playbook_{tool}({args})"
+
+
+def route_call(project: str, relative_path: str) -> str:
+    """The literal tool call that returns the document at `relative_path`."""
+    path = relative_path
+    if path in _AGENTS_DOCS:
+        return _call(project, "get_agents")
+    if path in _GUARDRAILS_DOCS:
+        return _call(project, "get_guardrails")
+    if path.startswith("languages/"):
+        parts = path.split("/")
+        if len(parts) > 2:
+            return _call(project, "get_standards", language=parts[1])
+        return _call(project, "get_standards")
+    if path.startswith("patterns/"):
+        name = path.rsplit("/", 1)[-1].removesuffix(".md")
+        return _call(project, "get_patterns", name=name)
+    if path.startswith("workflows/"):
+        name = path.rsplit("/", 1)[-1].removesuffix(".md")
+        return _call(project, "get_workflow", name=name)
+    if path.startswith("gates/"):
+        return _call(project, "get_gates")
+    return _call(project, "find_standards")
+
+
+def next_calls(project: str, entries: list[tuple[str, str]]) -> str:
+    """Render a Next Calls block from (relative_path, label) pairs."""
+    if not entries:
         return ""
     lines = ["", "## Next Calls", ""]
-    lines += [
-        f'- {label}: `playbook_get_standard(project="{project}", ref="{ref}")`'
-        for ref, label in refs
-    ]
+    lines += [f"- {label}: `{route_call(project, path)}`" for path, label in entries]
     return "\n".join(lines)
 
 
@@ -224,6 +275,8 @@ __all__ = [
     "as_str_set",
     "error",
     "next_calls",
+    "render_ref",
+    "route_call",
     "WritePolicy",
     "resolve_project",
     "set_policy",

@@ -31,7 +31,7 @@ from pathlib import Path
 
 import playbook_db
 
-DOD_PATH = "core/definition-of-done.md"
+DOD_PATH = "gates/definition-of-done.md"
 MAX_CHARS = 4000
 
 # Set from the plugin's userConfig. Shell-form hook commands reject
@@ -164,8 +164,7 @@ def decide(payload: dict) -> dict | None:
     if truncated:
         lines += [
             "",
-            f'[truncated] Read it whole with playbook_get_standard(project="{project}", '
-            f'ref="{DOD_PATH}").',
+            f'[truncated] Read it whole with playbook_get_gates(project="{project}").',
         ]
     return _context("\n".join(lines))
 

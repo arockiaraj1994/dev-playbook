@@ -69,10 +69,10 @@ _VALID_BODY = (
 _REQUIRED_FILES = (
     "AGENTS.md",
     "ARCHITECTURE.md",
-    "core/guardrails.md",
-    "core/git.md",
-    "core/definition-of-done.md",
-    "core/glossary.md",
+    "guardrails.md",
+    "git.md",
+    "gates/definition-of-done.md",
+    "glossary.md",
     "gates/README.md",
     "workflows/new-feature.md",
     "workflows/bug-fix.md",
@@ -103,7 +103,7 @@ async def test_scan_project_missing_required(store: StandardsStore):
     assert "workflows/new-feature.md" in status.missing_required
 
 
-@pytest.mark.parametrize("omitted", ["ARCHITECTURE.md", "core/git.md"])
+@pytest.mark.parametrize("omitted", ["ARCHITECTURE.md", "git.md"])
 async def test_first_class_doc_is_required(store: StandardsStore, omitted: str):
     """A project that ships every other required file is still red without this one."""
     for path in _REQUIRED_FILES:

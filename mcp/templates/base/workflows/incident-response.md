@@ -20,7 +20,7 @@ triggers: [incident, outage, postmortem, on call]
 
 ## Before you start
 
-Re-read `core/guardrails.md`. If requirements are ambiguous, ask before writing code.
+Re-read `guardrails.md`. If requirements are ambiguous, ask before writing code.
 
 ## Steps
 
@@ -38,5 +38,5 @@ Re-read `core/guardrails.md`. If requirements are ambiguous, ask before writing 
 
 ## Done
 
-Every applicable box in `core/definition-of-done.md` is checked, and `core/git.md`
+Every applicable box in `gates/definition-of-done.md` is checked, and `git.md`
 has been followed for the commit and review.

@@ -20,21 +20,23 @@ from tools.common import (
     as_str,
     error,
     resolve_project,
+    route_call,
     text,
     unknown_project,
 )
-from tools.refs import format_ref
 
 NAME = "playbook_find_standards"
 
 # Path prefixes behind the `type` filter, so a caller can narrow without
-# knowing the corpus layout.
+# knowing the corpus layout. Each value maps a family onto the paths a
+# read tool serves; matched by relative_path.startswith().
 _TYPES: dict[str, tuple[str, ...]] = {
-    "workflow": ("workflows/",),
+    "agents": ("AGENTS.md", "ARCHITECTURE.md", "glossary.md", "INDEX.md", "README.md"),
+    "guardrails": ("guardrails.md", "git.md"),
     "language": ("languages/",),
     "pattern": ("patterns/",),
+    "workflow": ("workflows/",),
     "gate": ("gates/",),
-    "core": ("core/",),
 }
 
 _WORD = re.compile(r"[a-z0-9]+")
@@ -51,15 +53,15 @@ DEFINITIONS: list[Tool] = [
         name=NAME,
         title="Search a project's standards",
         description=(
-            "Search a project's standards documents, or list them all when you "
-            "pass no query. Use it to find the rule covering something specific "
-            "before you write code, or to see what a project's standards contain.\n\n"
+            "Searches across a project's agents docs, guardrails, language "
+            "standards, patterns, workflows and gates, or lists them all when you "
+            "pass no query. Use it to find the rule covering something specific, or "
+            "to see what a project contains.\n\n"
             'Example: playbook_find_standards(project="nexre", query="error '
-            'handling in repositories") returns the ranked documents, each with '
-            "the ref to read it in full.\n\n"
-            "Limitations: returns snippets, not whole documents - read one with "
-            "playbook_get_standard using the ref given. It searches one project's "
-            "standards, not the codebase."
+            'handling in repositories") returns ranked documents, each with the '
+            "call that reads it in full.\n\n"
+            "Returns snippets, not whole documents - read one with the "
+            "playbook_get_* call shown. Searches the standards, not the codebase."
         ),
         annotations=READ_ONLY,
         inputSchema={
@@ -77,8 +79,8 @@ DEFINITIONS: list[Tool] = [
                     "type": "string",
                     "enum": sorted(_TYPES),
                     "description": (
-                        "Optional. Restrict to one kind of document: workflow, "
-                        "language, pattern, gate or core."
+                        "Optional. Restrict to one family of document: agents, "
+                        "guardrails, language, pattern, workflow or gate."
                     ),
                 },
                 "top_k": {
@@ -142,20 +144,14 @@ def _filter(rows: list[FileRow], doc_type: str) -> list[FileRow]:
 def _render_list(project: str, rows: list[FileRow], truncated: int) -> str:
     lines = [f"# Standards in '{project}'", "", f"{len(rows)} documents.", ""]
     for row in rows:
-        ref = format_ref(row.relative_path)
         desc = f" - {row.description}" if row.description else ""
-        lines.append(f"- `{ref}` **{row.title}**{desc}")
+        lines.append(f"- **{row.title}** (`{row.relative_path}`){desc}")
+        lines.append(f"  `{route_call(project, row.relative_path)}`")
     if truncated:
         lines += [
             "",
             f"{truncated} more not shown. Raise top_k, or narrow with `type` or a query.",
         ]
-    lines += [
-        "",
-        "## Next Calls",
-        "",
-        f'- Read one: `playbook_get_standard(project="{project}", ref="<ref above>")`',
-    ]
     return "\n".join(lines)
 
 
@@ -164,20 +160,16 @@ def _render_results(
 ) -> str:
     lines = [f"# Standards matching '{query}' in '{project}'", ""]
     for score, row in scored:
-        ref = format_ref(row.relative_path)
         lines += [
             f"## {row.title}",
             "",
-            f"`{ref}` - score {score:.1f}",
+            f"`{row.relative_path}` - score {score:.1f}",
             "",
             _snippet(row, terms),
             "",
+            f"Read it: `{route_call(project, row.relative_path)}`",
+            "",
         ]
-    lines += [
-        "## Next Calls",
-        "",
-        f'- Read one in full: `playbook_get_standard(project="{project}", ref="<ref above>")`',
-    ]
     return "\n".join(lines)
 
 

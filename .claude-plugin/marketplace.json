@@ -14,7 +14,7 @@
       "name": "dev-playbook",
       "source": "./plugins/dev-playbook",
       "description": "Your team's coding standards, in context. Serves guardrails, definition of done, per-language rules and task workflows over MCP - and scaffolds them for a repo that has none.",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "author": {
         "name": "Arockiaraj Rayappan",
         "email": "arockiaraj1994@gmail.com"

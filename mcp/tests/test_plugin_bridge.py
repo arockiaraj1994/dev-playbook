@@ -24,8 +24,12 @@ MCP_DIR = Path(__file__).resolve().parent.parent
 BRIDGE = MCP_DIR.parent / "plugins" / "dev-playbook" / "scripts" / "sse_bridge.py"
 
 EXPECTED_TOOLS = {
-    "playbook_start_task",
-    "playbook_get_standard",
+    "playbook_get_agents",
+    "playbook_get_guardrails",
+    "playbook_get_standards",
+    "playbook_get_patterns",
+    "playbook_get_workflow",
+    "playbook_get_gates",
     "playbook_find_standards",
     "playbook_list_templates",
     "playbook_scaffold_standards",
@@ -49,7 +53,7 @@ def sse_server(tmp_path_factory):
             [
                 {
                     "project": "bridged",
-                    "relative_path": "core/guardrails.md",
+                    "relative_path": "guardrails.md",
                     "kind": "markdown",
                     "is_executable": False,
                     "content": "# Guardrails\n\n- Do the right thing.\n",

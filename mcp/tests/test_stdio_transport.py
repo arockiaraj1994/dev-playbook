@@ -21,8 +21,12 @@ import server
 MCP_DIR = Path(__file__).resolve().parent.parent
 
 EXPECTED_TOOLS = {
-    "playbook_start_task",
-    "playbook_get_standard",
+    "playbook_get_agents",
+    "playbook_get_guardrails",
+    "playbook_get_standards",
+    "playbook_get_patterns",
+    "playbook_get_workflow",
+    "playbook_get_gates",
     "playbook_find_standards",
     "playbook_list_templates",
     "playbook_scaffold_standards",
@@ -149,7 +153,7 @@ def test_tools_list_matches_the_sse_surface(handshake):
 def test_the_entry_point_is_listed_first(handshake):
     lines, _ = handshake
     tools = _responses(lines)[2]["result"]["tools"]
-    assert tools[0]["name"] == "playbook_start_task"
+    assert tools[0]["name"] == "playbook_get_agents"
 
 
 def test_every_tool_is_annotated(handshake):

@@ -30,10 +30,10 @@ SEVERITY_SOFT = "soft"
 REQUIRED_FILES = (
     "AGENTS.md",
     "ARCHITECTURE.md",
-    "core/guardrails.md",
-    "core/git.md",
-    "core/definition-of-done.md",
-    "core/glossary.md",
+    "guardrails.md",
+    "git.md",
+    "gates/definition-of-done.md",
+    "glossary.md",
     "gates/README.md",
 )
 

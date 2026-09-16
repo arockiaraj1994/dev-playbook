@@ -127,7 +127,7 @@ def workspace(tmp_path):
     _make_db(
         data / "playbook.db",
         "billing-api",
-        {"core/guardrails.md": GUARDRAILS, "core/definition-of-done.md": DOD},
+        {"guardrails.md": GUARDRAILS, "gates/definition-of-done.md": DOD},
     )
     return {
         "repo": str(repo),
@@ -239,7 +239,7 @@ def test_session_start_notes_a_project_with_no_guardrails(tmp_path):
         _session_payload(str(repo)),
         {"CLAUDE_PLUGIN_DATA": str(data), "HOME": str(home)},
     )
-    assert "no core/guardrails.md" in out["hookSpecificOutput"]["additionalContext"]
+    assert "no guardrails.md" in out["hookSpecificOutput"]["additionalContext"]
 
 
 # ---------------------------------------------------------------------------
