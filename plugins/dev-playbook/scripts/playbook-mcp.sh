@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 #
-# Transport selector for the dev-playbook MCP server.
+# Transport selector for the dev-playbook MCP server - CONTRIBUTOR PATH ONLY.
+#
+# The bundled .mcp.json now connects to the server directly over SSE (see the
+# plugin's server_url option), which needs no local process, uv, or checkout -
+# the right default for a Docker-run server. This script stays for contributors
+# who run the server from a source checkout instead, wired up manually, e.g.:
+#   claude mcp add dev-playbook-local -- \
+#     env PLAYBOOK_SERVER_PATH=/path/to/dev-playbook/mcp \
+#     /path/to/plugin/scripts/playbook-mcp.sh
 #
 # Claude Code launches this as a stdio MCP server. What it execs depends on
 # whether the user configured a shared team server:

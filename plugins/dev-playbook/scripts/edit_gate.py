@@ -42,7 +42,15 @@ _TRUE = {"1", "true", "yes", "on"}
 
 
 def enforcing() -> bool:
-    return os.environ.get(ENFORCE_ENV, "").strip().lower() in _TRUE
+    """Enforcement is on if the plugin option is set, or init armed the marker.
+
+    The marker path lets `/dev-playbook-init` turn blocking on without the user
+    editing plugin config, and works against a Dockerised server where there is
+    no local DB to read.
+    """
+    if os.environ.get(ENFORCE_ENV, "").strip().lower() in _TRUE:
+        return True
+    return playbook_db.is_enforced()
 
 
 def _marker_dir() -> Path:
@@ -103,38 +111,38 @@ def _missing_text(name: str) -> str:
     return (
         f"This repo has no dev-playbook standards project named '{name}', so there "
         "is no definition of done to check this change against.\n"
-        "Create one with /dev-playbook:scaffold-standards, or call "
-        "playbook_list_templates() and then playbook_scaffold_standards(dry_run=true).\n"
+        "Run /dev-playbook-init to configure it (it checks the server and scaffolds "
+        "standards if this repo has none).\n"
         "Do not substitute another project's standards."
     )
 
 
 def decide(payload: dict) -> dict | None:
-    """The hook's whole decision. None means 'say nothing, allow the edit'."""
+    """The hook's whole decision. None means 'say nothing, allow the edit'.
+
+    A repo counts as configured when a local standards DB has a project for its
+    basename, OR `/dev-playbook-init` has written a per-repo marker (the path
+    that works against a Dockerised server, where the DB is in the container).
+    """
     cwd = str(payload.get("cwd") or "")
     session_id = str(payload.get("session_id") or "")
     cwd_name = Path(cwd).name if cwd else "this directory"
 
     conn = playbook_db.connect()
-    if conn is None:
-        # No standards DB at all: the plugin is installed but nothing has been
-        # scaffolded yet. Enforcing on that would block a first-run user out of
-        # their own repo, so it is only ever advisory.
-        if enforcing() and _claim_session(session_id):
-            return _context(
-                "[dev-playbook] Standards enforcement is on, but no standards database "
-                "was found, so nothing can be checked. Run "
-                "/dev-playbook:scaffold-standards to create this repo's standards."
-            )
-        return None
+    project = None
+    body = None
+    if conn is not None:
+        try:
+            project = playbook_db.project_for_cwd(conn, cwd)
+            body = playbook_db.read_doc(conn, project, DOD_PATH) if project else None
+        finally:
+            conn.close()
 
-    try:
-        project = playbook_db.project_for_cwd(conn, cwd)
-        body = playbook_db.read_doc(conn, project, DOD_PATH) if project else None
-    finally:
-        conn.close()
+    configured = project is not None or playbook_db.is_configured_marked(cwd)
 
-    if project is None:
+    if not configured:
+        # No project in a local DB and no marker from init. Block when enforcing;
+        # otherwise advise once so a first-run user is never silently locked out.
         if enforcing():
             return _deny(f"[dev-playbook] {_missing_text(cwd_name)}")
         if _claim_session(session_id):
@@ -145,9 +153,12 @@ def decide(payload: dict) -> dict | None:
         return None
 
     if not body:
+        # Configured, but no local DB body to read (Dockerised server). Point at
+        # the tool rather than inject the text.
+        who = project or cwd_name
         return _context(
-            f"[dev-playbook] Standards project '{project}' has no {DOD_PATH}. "
-            f'Call playbook_find_standards(project="{project}") to see what it does have.'
+            f"[dev-playbook] Standards project '{who}' is configured. Check this "
+            f'change against playbook_get_gates(project="{who}") before it is done.'
         )
 
     text = playbook_db.strip_frontmatter(body)

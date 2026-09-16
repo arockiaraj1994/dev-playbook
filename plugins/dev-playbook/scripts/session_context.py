@@ -43,26 +43,45 @@ def _emit(context: str) -> None:
 def _no_project_notice(cwd_name: str) -> str:
     return (
         f"[dev-playbook] No standards project named '{cwd_name}'. "
-        "If this repo should have coding standards, run "
-        "/dev-playbook:scaffold-standards to create them. "
-        "Do not substitute another project's standards."
+        "If this repo should have coding standards, run /dev-playbook-init to "
+        "configure it. Do not substitute another project's standards."
+    )
+
+
+def _configured_note(project: str) -> str:
+    """Docker mode: the DB is in the container, so point at the tools instead of
+    injecting the guardrails text the host cannot read."""
+    return (
+        f"[dev-playbook] Coding standards are active for project '{project}'. Before "
+        f'writing code, call playbook_get_guardrails(project="{project}") for the '
+        f'always-on rules and playbook_get_workflow(project="{project}", intent="...") '
+        "for the task workflow. Apply them to every change in this repo."
     )
 
 
 def build_context(payload: dict) -> str | None:
     cwd = str(payload.get("cwd") or "")
-    conn = playbook_db.connect()
-    if conn is None:
-        return None
-    try:
-        project = playbook_db.project_for_cwd(conn, cwd)
-        if project is None:
-            name = cwd.rsplit("/", 1)[-1] if cwd else "this directory"
-            return _no_project_notice(name)
+    name = cwd.rsplit("/", 1)[-1] if cwd else "this directory"
 
-        body = playbook_db.read_doc(conn, project, GUARDRAILS_PATH)
-    finally:
-        conn.close()
+    conn = playbook_db.connect()
+    project = None
+    body = None
+    if conn is not None:
+        try:
+            project = playbook_db.project_for_cwd(conn, cwd)
+            body = playbook_db.read_doc(conn, project, GUARDRAILS_PATH) if project else None
+        finally:
+            conn.close()
+
+    if project is None:
+        # No local DB project. A per-repo marker from /dev-playbook-init means it
+        # is configured against a server whose DB we cannot read (Docker) - point
+        # at the tools. With no DB and no marker, stay quiet.
+        if playbook_db.is_configured_marked(cwd):
+            return _configured_note(name)
+        if conn is None:
+            return None
+        return _no_project_notice(name)
 
     if not body:
         return (

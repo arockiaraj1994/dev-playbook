@@ -1,7 +1,7 @@
 {
   "name": "dev-playbook",
-  "version": "0.2.0",
-  "description": "Your team's coding standards, in context. Serves guardrails, definition of done, per-language rules and task workflows over MCP - and scaffolds them for a repo that has none.",
+  "version": "0.3.0",
+  "description": "Your team's coding standards, in context. Connects to a dev-playbook server (run it locally with Docker) over MCP to serve guardrails, definition of done, per-language rules and task workflows - and scaffolds them for a repo that has none. Run /dev-playbook-init to set it up.",
   "author": {
     "name": "Arockiaraj Rayappan",
     "email": "arockiaraj1994@gmail.com"
@@ -19,27 +19,27 @@
   "userConfig": {
     "server_url": {
       "type": "string",
-      "title": "Shared server URL",
-      "description": "Team mode: the base URL of a shared dev-playbook server, e.g. http://localhost:8420. Leave empty to run a local server on stdio, which needs no infrastructure.",
-      "default": ""
+      "title": "Server URL (SSE)",
+      "description": "The dev-playbook server's MCP SSE endpoint. Defaults to a locally-run Docker server (docker compose up -d serves port 8420). Point it at a shared team server instead if you have one; a bare host has /sse appended.",
+      "default": "http://localhost:8420/sse"
     },
     "token": {
       "type": "string",
       "title": "Bearer token",
-      "description": "Bearer token for the shared server, from POST /auth/login. Only needed when server_url is set and that server has auth enabled.",
+      "description": "Bearer token, from POST /auth/login. Only needed when the server has auth enabled (a shared/team server). Leave empty for a local Docker server with auth off.",
       "sensitive": true,
       "default": ""
     },
     "server_path": {
       "type": "directory",
-      "title": "Server directory",
-      "description": "Path to the repo's mcp/ directory. Only needed if the plugin cannot find it next to itself - it normally resolves automatically from the marketplace clone.",
+      "title": "Server directory (contributors)",
+      "description": "Only for running the server from a source checkout instead of Docker: the repo's mcp/ directory, used by scripts/playbook-mcp.sh. Not needed for the default SSE connection.",
       "default": ""
     },
     "enforce_standards": {
       "type": "boolean",
       "title": "Enforce standards",
-      "description": "Block the first Write/Edit of a session when the project's standards are missing, instead of only warning. Off by default: installing a plugin should not stop anyone's work by surprise.",
+      "description": "Block Write/Edit in a repo that has no dev-playbook project, instead of only warning. /dev-playbook-init turns this on for you (via a marker) - this option forces it on regardless.",
       "default": false
     }
   }

@@ -61,9 +61,16 @@ scoped names are what you call (prefix `mcp__plugin_dev-playbook_dev-playbook__`
 5. **Check your work against the definition of done** before you say you are
    finished: `playbook_get_gates(project)`.
 
+## First-time setup
+
+If the tools are not connected, or this repo has never been set up, run
+`/dev-playbook-init` - it connects the MCP server (a locally-run Docker server by
+default), configures the global CLAUDE.md, and scaffolds this repo's standards if
+it has none.
+
 ## When there are no standards yet
 
 The tools will tell you the project is unknown and name the projects that do
-exist. Do not fall back to one of those. Offer to scaffold: run
-`/dev-playbook:scaffold-standards`, or call `playbook_list_templates` and then
-`playbook_scaffold_standards` with `dry_run=true`.
+exist. Do not fall back to one of those. Offer to configure it: run
+`/dev-playbook-init` (which scaffolds when missing), or scaffold directly with
+`/dev-playbook:scaffold-standards`.

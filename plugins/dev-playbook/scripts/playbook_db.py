@@ -120,6 +120,52 @@ def read_doc(conn: sqlite3.Connection, project: str, relative_path: str) -> str 
     return str(row[0])
 
 
+# ---------------------------------------------------------------------------
+# Markers
+#
+# With a Dockerised server the standards DB lives inside the container, so the
+# hooks cannot read it from the host. `/dev-playbook-init` therefore drops small
+# marker files the hooks can see without any DB or network access: one to arm
+# enforcement, and one per repo it has configured. Both live under the plugin's
+# persistent data dir, which init and the hooks both receive as
+# CLAUDE_PLUGIN_DATA.
+# ---------------------------------------------------------------------------
+
+
+def data_dir() -> Path:
+    raw = os.environ.get("CLAUDE_PLUGIN_DATA", "").strip()
+    if raw:
+        return Path(raw).expanduser()
+    return Path.home() / ".claude" / "plugins" / "data" / PLUGIN_NAME
+
+
+def _safe_name(cwd: str) -> str:
+    name = Path(cwd).name if cwd else ""
+    return "".join(c for c in name if c.isalnum() or c in "-_.") or "_"
+
+
+def enforce_marker() -> Path:
+    return data_dir() / "enforce"
+
+
+def configured_marker(cwd: str) -> Path:
+    return data_dir() / "configured" / _safe_name(cwd)
+
+
+def is_enforced() -> bool:
+    try:
+        return enforce_marker().is_file()
+    except OSError:
+        return False
+
+
+def is_configured_marked(cwd: str) -> bool:
+    try:
+        return bool(cwd) and configured_marker(cwd).is_file()
+    except OSError:
+        return False
+
+
 def strip_frontmatter(body: str) -> str:
     """Drop a leading YAML frontmatter block.
 
