@@ -121,7 +121,7 @@ def test_contribution_to_unknown_group_is_rejected(tmp_path: Path):
     (root / "rules" / "g.yaml").write_text(
         yaml.safe_dump(
             {
-                "contributes_to": "core/guardrails.md",
+                "contributes_to": "guardrails.md",
                 "section": "Bad",
                 "rules": [{"id": "x", "group": "no-such-group", "title": "X"}],
             }
@@ -175,7 +175,7 @@ def test_rendered_markdown_is_well_formed(languages):
 
 def test_multi_language_guardrails_carry_a_section_per_language():
     docs = {d.relative_path: d for d in svc.preview(["java", "typescript"], "demo", PLACEHOLDERS)}
-    content = docs["core/guardrails.md"].content
+    content = docs["guardrails.md"].content
 
     assert "### Java" in content
     assert "### TypeScript" in content
@@ -189,7 +189,7 @@ def test_multi_language_guardrails_carry_a_section_per_language():
 def test_single_language_renders_no_section_headings():
     """A one-language project must read as it did before packs existed."""
     docs = {d.relative_path: d for d in svc.preview(["java"], "demo", PLACEHOLDERS)}
-    content = docs["core/guardrails.md"].content
+    content = docs["guardrails.md"].content
 
     assert "### Java" not in content
     assert "no-raw-types" in content
@@ -342,7 +342,7 @@ async def test_documents_record_the_pack_that_produced_them(store: StandardsStor
     }
     conn.close()
 
-    assert rows["core/guardrails.md"] == "base"
+    assert rows["guardrails.md"] == "base"
     assert rows["languages/java/standards.md"] == "java"
     assert rows["patterns/typescript/use-case.md"] == "typescript"
 
@@ -401,15 +401,15 @@ async def test_source_hash_detects_a_local_edit(store: StandardsStore):
     conn.row_factory = sqlite3.Row
     stored = conn.execute(
         "SELECT source_hash FROM standards_files "
-        "WHERE project='demo' AND relative_path='core/guardrails.md'"
+        "WHERE project='demo' AND relative_path='guardrails.md'"
     ).fetchone()["source_hash"]
     conn.close()
     assert stored
 
-    existing = await store.get_file("demo", "core/guardrails.md")
+    existing = await store.get_file("demo", "guardrails.md")
     await store.upsert_file(
         project="demo",
-        relative_path="core/guardrails.md",
+        relative_path="guardrails.md",
         kind="markdown",
         title=existing.title,
         description=existing.description,
@@ -419,7 +419,7 @@ async def test_source_hash_detects_a_local_edit(store: StandardsStore):
         updated_by="human",
     )
 
-    after = await store.get_file("demo", "core/guardrails.md")
+    after = await store.get_file("demo", "guardrails.md")
     edited = hashlib.sha256(f"---\n{after.frontmatter}\n---\n\n{after.body}".encode()).hexdigest()
     assert edited != stored, "an edited document must not still match its scaffold hash"
 

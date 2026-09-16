@@ -40,11 +40,17 @@ Cursor and Windsurf have no plugin system — use the manual MCP setup below.
 
 ## The tool surface
 
+One read tool per artifact family, plus search and the scaffolding pair:
+
 | Tool | Does | Writes |
 |---|---|---|
-| `playbook_start_task(project, intent)` | The entry point. Returns the guardrails plus the workflow matching what you are about to do, and the refs to read next. | no |
-| `playbook_get_standard(project, ref)` | Reads one document. `ref` is a path (`core/guardrails.md`) or shorthand (`guardrails`, `workflow:bug-fix`). | no |
-| `playbook_find_standards(project, query?, type?, top_k?)` | Searches a project's standards, or lists them all when given no query. | no |
+| `playbook_get_agents(project)` | AGENTS.md, ARCHITECTURE.md and the glossary - identity, precedence, context. | no |
+| `playbook_get_guardrails(project)` | The always-on MUST / MUST NOT rules and git conventions. | no |
+| `playbook_get_standards(project, language)` | A language's standards, testing rules and anti-patterns. `language` is required. | no |
+| `playbook_get_patterns(project, name?)` | Implementation patterns (repository, use-case, …); omit `name` to list them. | no |
+| `playbook_get_workflow(project, intent? \| name?)` | The workflow matching an intent, or one by name; omit both to list them. | no |
+| `playbook_get_gates(project, language?)` | The definition of done and the verify scripts to run before a change is done. | no |
+| `playbook_find_standards(project, query?, type?, top_k?)` | Searches every family, or lists them all when given no query. | no |
 | `playbook_list_templates(language?)` | The language pack catalog: rule counts, required placeholders, per-pack detail. | no |
 | `playbook_scaffold_standards(project, languages[], ...)` | Creates a standards project from base + language packs. Run with `dry_run=true` first. | **yes** |
 
@@ -60,7 +66,7 @@ playbook_scaffold_standards(project="billing", languages=["java"],
     placeholders={"package": "com.acme.billing"}, dry_run=true)
                                                 # manifest; nothing written
 playbook_scaffold_standards(..., dry_run=false) # write it
-playbook_start_task(project="billing", intent="add pagination to /orders")
+playbook_get_workflow(project="billing", intent="add pagination to /orders")
 ```
 
 The tool and the dashboard's creation wizard both call `mcp/scaffold_service.py`,

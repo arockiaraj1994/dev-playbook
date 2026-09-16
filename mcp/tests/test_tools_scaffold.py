@@ -65,7 +65,7 @@ async def test_dry_run_writes_nothing(store: StandardsStore):
     )
     assert ctx.status == "ok"
     assert "Nothing was written" in body
-    assert "core/guardrails.md" in body
+    assert "guardrails.md" in body
     assert await store.list_projects() == []
 
 
@@ -75,7 +75,7 @@ async def test_scaffold_creates_the_project(store: StandardsStore):
     assert "Created standards project 'billing'" in body
     assert await store.list_projects() == ["billing"]
     files = await store.list_files("billing")
-    assert any(f.relative_path == "core/guardrails.md" for f in files)
+    assert any(f.relative_path == "guardrails.md" for f in files)
     assert any(f.relative_path.startswith("languages/java/") for f in files)
 
 
@@ -85,7 +85,7 @@ async def test_scaffold_records_the_caller_as_actor(store: StandardsStore):
         await call(store, project="billing", languages=["java"], placeholders=JAVA)
     finally:
         principal_var.reset(token)
-    row = await store.get_file("billing", "core/guardrails.md")
+    row = await store.get_file("billing", "guardrails.md")
     assert row is not None and row.updated_by == "alice"
 
 
@@ -98,7 +98,7 @@ async def test_two_languages_share_one_guardrails_document(store: StandardsStore
         placeholders=JAVA,
     )
     paths = [f.relative_path for f in await store.list_files("poly")]
-    assert paths.count("core/guardrails.md") == 1
+    assert paths.count("guardrails.md") == 1
     assert any(p.startswith("languages/java/") for p in paths)
     assert any(p.startswith("languages/typescript/") for p in paths)
 
@@ -211,7 +211,7 @@ async def test_disabled_scaffolding_refuses_and_says_reads_still_work(store: Sta
     body, ctx = await call(store, project="billing", languages=["java"], placeholders=JAVA)
     assert ctx.status == "error"
     assert "disabled on this server" in body
-    assert "playbook_get_standard" in body
+    assert "playbook_get_guardrails" in body
 
 
 # ---------------------------------------------------------------------------

@@ -8,13 +8,13 @@ tags: [readme]
 
 Languages: **{{languages}}**
 
-| Directory | Holds |
+| Path | Holds |
 | --- | --- |
-| `core/` | Guardrails, git practice, definition of done, glossary |
+| root files | `AGENTS.md` (start here), `ARCHITECTURE.md`, `guardrails.md`, `git.md`, `glossary.md` |
 | `languages/` | Per-language standards, testing and anti-patterns |
-| `patterns/` | Canonical shapes for recurring work, per language |
+| `patterns/` | Canonical shapes for recurring work |
 | `workflows/` | Step-by-step flows per task type |
-| `gates/` | Executable verification scripts |
+| `gates/` | Definition of done and executable verification scripts |
 
 Start at `AGENTS.md`. It names every other document and the order they take
 precedence in.

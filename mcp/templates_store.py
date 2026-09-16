@@ -9,7 +9,7 @@ A project is composed from the **base pack** plus one or more **language packs**
 
     base/                    always applied
       pack.yaml
-      rules/*.yaml           owns core/guardrails.md, core/git.md, ARCHITECTURE.md, ...
+      rules/*.yaml           owns guardrails.md, git.md, ARCHITECTURE.md, ...
       docs/**                AGENTS.md, INDEX.md, glossary, gates/README.md
       workflows/*.md         required and optional, flagged in their frontmatter
     languages/<id>/          one per selected language
@@ -18,7 +18,7 @@ A project is composed from the **base pack** plus one or more **language packs**
       docs/**                languages/<id>/*, patterns/<id>/*, its gate script
 
 Language packs contribute rather than own, because otherwise two selected
-languages would both try to write core/guardrails.md. Rule ids are namespaced by
+languages would both try to write guardrails.md. Rule ids are namespaced by
 pack (`java:no-raw-types`) since several packs legitimately define a rule with
 the same name.
 """

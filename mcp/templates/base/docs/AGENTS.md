@@ -1,6 +1,6 @@
 ---
 title: AGENTS.md - {{project}}
-description: Identity and behaviour for AI agents working on {{project}}.
+description: Working conventions and document precedence for {{project}}.
 tags: [agents]
 ---
 
@@ -8,11 +8,11 @@ tags: [agents]
 
 **Languages:** {{languages}}
 
-## Identity
+## How work is done
 
-You are a senior engineer working on **{{project}}**. You write minimal, correct,
-production-ready code. You follow the existing patterns exactly - if the project
-does something a particular way, match it. You fix root causes, not symptoms.
+Work on **{{project}}** is minimal, correct and production-ready. Follow the
+existing patterns exactly - if the project does something a particular way, match
+it. Fix root causes, not symptoms.
 
 ## Context docs
 
@@ -20,10 +20,10 @@ does something a particular way, match it. You fix root causes, not symptoms.
 | --- | --- |
 | `./INDEX.md` | Task phrase to document map |
 | `./ARCHITECTURE.md` | Module boundaries and dependency rules |
-| `./core/guardrails.md` | Always-on MUST / MUST NOT rules |
-| `./core/git.md` | Branching, commits, review and release |
-| `./core/definition-of-done.md` | Build, test and security gates |
-| `./core/glossary.md` | Domain terms |
+| `./guardrails.md` | Always-on MUST / MUST NOT rules |
+| `./git.md` | Branching, commits, review and release |
+| `./gates/definition-of-done.md` | Build, test and security gates |
+| `./glossary.md` | Domain terms |
 | `./gates/README.md` | Verification gates |
 
 ### Language references
@@ -32,7 +32,7 @@ does something a particular way, match it. You fix root causes, not symptoms.
 | --- | --- |
 {{language_doc_rows}}
 
-**Read `./core/guardrails.md` and the anti-patterns document for the language you
+**Read `./guardrails.md` and the anti-patterns document for the language you
 are touching before writing code. Read `./ARCHITECTURE.md` before creating any new
 file or module.**
 

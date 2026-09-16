@@ -1,4 +1,4 @@
-doc: core/git.md
+doc: git.md
 label: Git practice
 merge: by-group
 title: Git practice - {{project}}

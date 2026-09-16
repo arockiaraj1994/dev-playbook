@@ -30,7 +30,7 @@ DEFINITIONS: list[Tool] = [
             'playbook_scaffold_standards(project="billing", languages=["java"], '
             "dry_run=true) to show them what it would generate.\n\n"
             "Does not use: reading an existing project's standards (that is "
-            "playbook_get_standard or playbook_find_standards)."
+            "the playbook_get_* tools or playbook_find_standards)."
         ),
         annotations=READ_ONLY,
         inputSchema={

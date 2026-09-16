@@ -1,4 +1,4 @@
-doc: core/guardrails.md
+doc: guardrails.md
 label: Everyday rules
 merge: by-group
 title: Guardrails - {{project}}
@@ -14,8 +14,8 @@ groups:
     title: MUST NOT
 outro: |
   Module boundaries and dependency direction live in `ARCHITECTURE.md`.
-  Git and review practice lives in `core/git.md`.
-  See `core/definition-of-done.md` for the completion checklist.
+  Git and review practice lives in `git.md`.
+  See `gates/definition-of-done.md` for the completion checklist.
 rules:
   - id: scope-only-what-is-asked
     group: must

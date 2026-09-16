@@ -6,7 +6,7 @@ bundled here or arrives from a synced template repository.
 
 ## Why packs rather than whole templates
 
-Every language needs an `AGENTS.md`, a `core/guardrails.md` and an
+Every language needs an `AGENTS.md`, a `guardrails.md` and an
 `ARCHITECTURE.md`. If each language shipped its own copy, selecting two languages
 would mean two packs writing the same file. So the base pack **owns** the shared
 documents and each language pack **contributes** its rules into them.
@@ -16,10 +16,10 @@ documents and each language pack **contributes** its rules into them.
 ```
 base/
   pack.yaml                    kind: base
-  rules/*.yaml                 owns core/guardrails.md, core/git.md,
-                               core/definition-of-done.md, ARCHITECTURE.md
+  rules/*.yaml                 owns guardrails.md, git.md,
+                               gates/definition-of-done.md, ARCHITECTURE.md
   docs/**                      AGENTS.md, INDEX.md, README.md,
-                               core/glossary.md, gates/README.md
+                               glossary.md, gates/README.md
   workflows/*.md               required and optional, flagged in frontmatter
 languages/<id>/
   pack.yaml                    kind: language
@@ -74,7 +74,7 @@ A rule file either **owns** a document or **contributes** to one.
 ### Owning
 
 ```yaml
-doc: core/guardrails.md        # relative path to generate
+doc: guardrails.md        # relative path to generate
 label: Everyday rules          # category name shown in the wizard's rule picker
 merge: by-group                # by-group | by-language
 title: Guardrails - {{project}}
@@ -88,7 +88,7 @@ groups:                        # at least one; defines heading order
   - id: must_not
     title: MUST NOT
 outro: |                       # optional markdown after the rule table
-  See `core/definition-of-done.md`.
+  See `gates/definition-of-done.md`.
 rules:
   - id: no-hardcoded-secrets   # unique within the pack
     group: must_not            # must match a declared group id
@@ -255,8 +255,8 @@ The scanner requires these in every project, so a composition that omits one
 scaffolds red:
 
 ```
-AGENTS.md            ARCHITECTURE.md      core/guardrails.md
-core/git.md          core/definition-of-done.md    core/glossary.md
+AGENTS.md            ARCHITECTURE.md      guardrails.md
+git.md          gates/definition-of-done.md    glossary.md
 gates/README.md
 workflows/new-feature.md   workflows/bug-fix.md
 workflows/security-fix.md  workflows/refactor.md

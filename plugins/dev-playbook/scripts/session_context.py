@@ -19,7 +19,7 @@ import sys
 
 import playbook_db
 
-GUARDRAILS_PATH = "core/guardrails.md"
+GUARDRAILS_PATH = "guardrails.md"
 
 # Long guardrails documents exist. Injecting one whole would crowd out the
 # session it is meant to inform, so it is trimmed and the model is told where
@@ -79,9 +79,9 @@ def build_context(payload: dict) -> str | None:
         f"[dev-playbook] Coding standards are active for project '{project}'.",
         "",
         "Its guardrails follow. Apply them to every change you make in this repo.",
-        f'Before writing code, call playbook_start_task(project="{project}", intent="...") '
+        f'Before writing code, call playbook_get_workflow(project="{project}", intent="...") '
         "for the workflow matching the task; check your work against "
-        f'playbook_get_standard(project="{project}", ref="core/definition-of-done.md").',
+        f'playbook_get_gates(project="{project}").',
         "",
         "---",
         "",
@@ -91,8 +91,7 @@ def build_context(payload: dict) -> str | None:
         lines += [
             "",
             "---",
-            f'[truncated] Read the whole document with playbook_get_standard(project="{project}", '
-            f'ref="{GUARDRAILS_PATH}").',
+            f'[truncated] Read the whole document with playbook_get_guardrails(project="{project}").',
         ]
     return "\n".join(lines)
 

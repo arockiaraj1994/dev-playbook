@@ -1,6 +1,6 @@
 ---
 name: scaffold-standards
-description: Create a dev-playbook standards project for a repo that has none - detect its languages, pick the template packs, fill the placeholders from the actual source, preview, and write. Use when playbook_start_task reports an unknown project, or when the user asks to set up, bootstrap or scaffold coding standards.
+description: Create a dev-playbook standards project for a repo that has none - detect its languages, pick the template packs, fill the placeholders from the actual source, preview, and write. Use when a playbook read tool reports an unknown project, or when the user asks to set up, bootstrap or scaffold coding standards.
 ---
 
 # Scaffolding standards for this repo
@@ -79,7 +79,7 @@ Re-run the identical call with `dry_run=false` once they agree. Then confirm it
 took:
 
 ```
-playbook_start_task(project="<dir basename>", intent="<whatever is next>")
+playbook_get_workflow(project="<dir basename>", intent="<whatever is next>")
 ```
 
 The SessionStart hook picks the new project up from the next session onwards,

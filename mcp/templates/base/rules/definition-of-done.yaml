@@ -1,4 +1,4 @@
-doc: core/definition-of-done.md
+doc: gates/definition-of-done.md
 label: Definition of done
 merge: by-group
 title: Definition of Done - {{project}}

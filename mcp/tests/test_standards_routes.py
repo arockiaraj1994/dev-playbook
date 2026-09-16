@@ -542,7 +542,7 @@ async def test_wizard_step3_shows_git_rules(app_admin) -> None:
     body = _walk_to_step(client, csrf, "git-rules").text
     assert "base:conventional-commits" in body
     assert "base:no-secrets-in-history" in body
-    assert "core/git.md" in body
+    assert "git.md" in body
 
 
 async def test_wizard_step4_locks_required_workflows(app_admin) -> None:
@@ -561,8 +561,8 @@ async def test_wizard_step5_previews_every_document(app_admin) -> None:
     csrf = _login(client, "admin", "adminpw")
 
     body = _walk_to_step(client, csrf, "review").text
-    assert "core/guardrails.md" in body
-    assert "core/git.md" in body
+    assert "guardrails.md" in body
+    assert "git.md" in body
     assert "languages/java/standards.md" in body
     assert "languages/typescript/standards.md" in body
     # Edit buttons let the user go back to any step from the review.
