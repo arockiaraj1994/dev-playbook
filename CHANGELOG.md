@@ -8,6 +8,28 @@ changes after 1.0.0 will bump the **major**.
 
 ## [Unreleased]
 
+### Added - dev-playbook plugin v0.3.0 - Docker-first, one command to set up
+
+The plugin no longer runs the server from a source checkout. It connects to a
+dev-playbook server you run yourself (a local Docker container by default) over
+MCP SSE, and a new `/dev-playbook-init` command does the first-run setup.
+
+- **`/dev-playbook-init`** (new `commands/` dir) - resolves this repo's project
+  (its directory basename), registers the MCP at user scope, updates the global
+  `~/.claude/CLAUDE.md`, arms the edit gate, and checks/creates the repo's
+  standards project (reusing the scaffold flow). Idempotent. Backed by a stdlib
+  helper `scripts/dp_init.py`.
+- **Docker-first connection** - the bundled `.mcp.json` is now a direct SSE entry
+  to `server_url` (default `http://localhost:8420/sse`); no bridge, no `uv`, no
+  checkout. `scripts/playbook-mcp.sh` / `sse_bridge.py` remain for contributors
+  running from source.
+- **Edit gate works against a remote server** - `edit_gate` blocks `Write`/`Edit`
+  in a repo that is not configured (no local DB project **and** no per-repo
+  marker), and enforcement can be armed by an init marker rather than only the
+  plugin option. The hooks fall back to marker-based state when the DB is in a
+  container.
+- Plugin bumped to **0.3.0**; marketplace entry updated. (Redmine #383)
+
 ### Changed - BREAKING: one read tool per artifact family (MCP server v2.0.0)
 
 The five-tool surface is replaced by one read tool per document family, so each

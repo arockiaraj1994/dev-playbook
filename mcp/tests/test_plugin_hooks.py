@@ -185,13 +185,13 @@ def test_session_start_matches_the_project_case_insensitively(tmp_path, workspac
     assert "Never commit secrets." in out["hookSpecificOutput"]["additionalContext"]
 
 
-def test_session_start_names_the_scaffold_skill_when_the_project_is_missing(tmp_path, workspace):
+def test_session_start_names_init_when_the_project_is_missing(tmp_path, workspace):
     other = tmp_path / "some-other-repo"
     other.mkdir()
     code, out, _ = _run(SESSION_CONTEXT, _session_payload(str(other)), workspace["env"])
     assert code == 0
     context = out["hookSpecificOutput"]["additionalContext"]
-    assert "/dev-playbook:scaffold-standards" in context
+    assert "/dev-playbook-init" in context
     assert "some-other-repo" in context
     # It must not offer the standards it did find as a substitute.
     assert "billing-api" not in context
@@ -276,7 +276,7 @@ def test_edit_gate_is_advisory_by_default_when_the_project_is_missing(tmp_path, 
     assert code == 0
     spec = out["hookSpecificOutput"]
     assert "permissionDecision" not in spec
-    assert "/dev-playbook:scaffold-standards" in spec["additionalContext"]
+    assert "/dev-playbook-init" in spec["additionalContext"]
 
 
 def test_edit_gate_denies_when_enforcing_and_the_project_is_missing(tmp_path, workspace):
@@ -287,7 +287,7 @@ def test_edit_gate_denies_when_enforcing_and_the_project_is_missing(tmp_path, wo
     assert code == 0
     spec = out["hookSpecificOutput"]
     assert spec["permissionDecision"] == "deny"
-    assert "/dev-playbook:scaffold-standards" in spec["permissionDecisionReason"]
+    assert "/dev-playbook-init" in spec["permissionDecisionReason"]
 
 
 def test_the_enforcing_deny_is_not_once_per_session(tmp_path, workspace):
@@ -306,21 +306,75 @@ def test_edit_gate_never_denies_when_the_project_has_standards(workspace):
     assert "permissionDecision" not in out["hookSpecificOutput"]
 
 
-def test_edit_gate_does_not_block_when_there_is_no_database(tmp_path):
-    """Enforcing on a machine with nothing scaffolded would lock a new user out."""
+def test_edit_gate_stays_advisory_with_no_database_and_no_enforcement(tmp_path):
+    """Plugin installed, nothing configured, enforcement off: never block."""
     home = tmp_path / "home"
     home.mkdir()
     code, out, _ = _run(
         EDIT_GATE,
         _edit_payload(str(tmp_path)),
+        {"CLAUDE_PLUGIN_DATA": str(tmp_path / "nothing-here"), "HOME": str(home)},
+    )
+    assert code == 0
+    assert "permissionDecision" not in (out or {}).get("hookSpecificOutput", {})
+
+
+def test_edit_gate_denies_in_docker_mode_when_enforcing_and_unconfigured(tmp_path):
+    """No local DB (server is in a container). Enforcing + no marker → block."""
+    home = tmp_path / "home"
+    home.mkdir()
+    repo = tmp_path / "some-repo"
+    repo.mkdir()
+    code, out, _ = _run(
+        EDIT_GATE,
+        _edit_payload(str(repo)),
         {
-            "CLAUDE_PLUGIN_DATA": str(tmp_path / "nothing-here"),
+            "CLAUDE_PLUGIN_DATA": str(tmp_path / "empty-data"),
             "HOME": str(home),
             "CLAUDE_PLUGIN_OPTION_ENFORCE_STANDARDS": "true",
         },
     )
     assert code == 0
+    assert out["hookSpecificOutput"]["permissionDecision"] == "deny"
+    assert "/dev-playbook-init" in out["hookSpecificOutput"]["permissionDecisionReason"]
+
+
+def test_edit_gate_allows_when_a_configured_marker_exists_without_a_database(tmp_path):
+    """The per-repo marker from /dev-playbook-init clears the block in Docker mode."""
+    home = tmp_path / "home"
+    home.mkdir()
+    data = tmp_path / "data"
+    (data / "configured").mkdir(parents=True)
+    (data / "configured" / "billing-api").write_text("configured\n")
+    repo = tmp_path / "billing-api"
+    repo.mkdir()
+    _code, out, _ = _run(
+        EDIT_GATE,
+        _edit_payload(str(repo)),
+        {
+            "CLAUDE_PLUGIN_DATA": str(data),
+            "HOME": str(home),
+            "CLAUDE_PLUGIN_OPTION_ENFORCE_STANDARDS": "true",
+        },
+    )
     assert "permissionDecision" not in (out or {}).get("hookSpecificOutput", {})
+
+
+def test_enforce_marker_arms_enforcement_without_the_plugin_option(tmp_path):
+    """/dev-playbook-init arms blocking via a marker, not the plugin option."""
+    home = tmp_path / "home"
+    home.mkdir()
+    data = tmp_path / "data"
+    data.mkdir()
+    (data / "enforce").write_text("on\n")
+    repo = tmp_path / "some-repo"
+    repo.mkdir()
+    _code, out, _ = _run(
+        EDIT_GATE,
+        _edit_payload(str(repo)),
+        {"CLAUDE_PLUGIN_DATA": str(data), "HOME": str(home)},
+    )
+    assert out["hookSpecificOutput"]["permissionDecision"] == "deny"
 
 
 @pytest.mark.parametrize("value", ["", "false", "0", "no", "off", "maybe"])

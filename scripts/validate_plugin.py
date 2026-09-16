@@ -28,6 +28,10 @@ ROOT_ONLY = ("skills", "hooks", ".mcp.json", "scripts", "agents", "commands")
 
 HOOK_SCRIPTS = ("session_context.py", "edit_gate.py", "playbook_db.py")
 
+# Scripts that must import nothing but the stdlib (plus local modules): the hooks,
+# and dp_init.py, which /dev-playbook-init runs under the host's bare python3.
+STDLIB_SCRIPTS = (*HOOK_SCRIPTS, "dp_init.py")
+
 problems: list[str] = []
 
 
@@ -143,6 +147,16 @@ def check_layout(root: Path) -> None:
         fail(f"{PLUGIN_DIR}/scripts/playbook-mcp.sh is not executable")
 
 
+def check_commands(root: Path) -> None:
+    """The /dev-playbook-init command must exist and carry frontmatter, or the
+    slash command simply will not appear."""
+    cmd = root / PLUGIN_DIR / "commands" / "dev-playbook-init.md"
+    if not cmd.is_file():
+        fail(f"missing: {PLUGIN_DIR}/commands/dev-playbook-init.md")
+    elif not cmd.read_text().startswith("---"):
+        fail(f"{PLUGIN_DIR}/commands/dev-playbook-init.md: no YAML frontmatter")
+
+
 def check_hooks_json(root: Path) -> None:
     """Every hook entry must be in a form the runtime actually accepts.
 
@@ -205,7 +219,7 @@ def check_hooks_are_stdlib_only(root: Path) -> None:
     """
     scripts_dir = root / PLUGIN_DIR / "scripts"
     local = {p.stem for p in scripts_dir.glob("*.py")}
-    for name in HOOK_SCRIPTS:
+    for name in STDLIB_SCRIPTS:
         path = scripts_dir / name
         if not path.is_file():
             fail(f"missing: {PLUGIN_DIR}/scripts/{name}")
@@ -236,6 +250,7 @@ def main() -> int:
     check_plugin_manifest(root)
     check_marketplace(root)
     check_layout(root)
+    check_commands(root)
     check_hooks_json(root)
     check_hooks_are_stdlib_only(root)
 

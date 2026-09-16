@@ -13,8 +13,8 @@
     {
       "name": "dev-playbook",
       "source": "./plugins/dev-playbook",
-      "description": "Your team's coding standards, in context. Serves guardrails, definition of done, per-language rules and task workflows over MCP - and scaffolds them for a repo that has none.",
-      "version": "0.1.0",
+      "description": "Your team's coding standards, in context. Connects over MCP to a dev-playbook server (run it locally with Docker) for guardrails, definition of done, per-language rules and task workflows - and scaffolds them for a repo that has none. Run /dev-playbook-init to set it up.",
+      "version": "0.3.0",
       "author": {
         "name": "Arockiaraj Rayappan",
         "email": "arockiaraj1994@gmail.com"
