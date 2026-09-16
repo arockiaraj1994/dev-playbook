@@ -148,9 +148,7 @@ async def test_patterns_unknown_name_lists_available(store: StandardsStore):
         ("upgrade a dependency", "workflows/dependency-upgrade.md"),
     ],
 )
-async def test_workflow_matches_from_triggers(
-    store: StandardsStore, intent: str, expected: str
-):
+async def test_workflow_matches_from_triggers(store: StandardsStore, intent: str, expected: str):
     _body, ctx = await run(workflow, store, project="billing", intent=intent)
     assert ctx.doc_path == expected
 
@@ -243,7 +241,7 @@ async def test_find_top_k_is_clamped(store: StandardsStore):
 # ---------------------------------------------------------------------------
 
 _MODULES = {m.NAME: m for m in (agents, guardrails, standards, patterns, workflow, gates)}
-_CALL_RE = re.compile(r'(playbook_get_\w+)\(([^)]*)\)')
+_CALL_RE = re.compile(r"(playbook_get_\w+)\(([^)]*)\)")
 
 
 def _parse_args(arg_text: str) -> dict:
