@@ -8,6 +8,17 @@ changes after 1.0.0 will bump the **major**.
 
 ## [Unreleased]
 
+### Changed - dev-playbook plugin v0.4.0 - enforce standards by default
+
+`enforce_standards` now defaults to `true` instead of `false`. A fresh install
+blocks `Write`/`Edit` in any repo with no matching dev-playbook standards
+project until `/dev-playbook-init` is run there, rather than only warning.
+Existing installs keep whatever value they already set (a local `pluginConfigs`
+override always wins over the manifest default) and are unaffected until they
+update.
+
+- Plugin bumped to **0.4.0**; marketplace entry updated.
+
 ### Added - dev-playbook plugin v0.3.0 - Docker-first, one command to set up
 
 The plugin no longer runs the server from a source checkout. It connects to a

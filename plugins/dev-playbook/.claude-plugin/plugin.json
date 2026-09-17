@@ -1,6 +1,6 @@
 {
   "name": "dev-playbook",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Your team's coding standards, in context. Connects to a dev-playbook server (run it locally with Docker) over MCP to serve guardrails, definition of done, per-language rules and task workflows - and scaffolds them for a repo that has none. Run /dev-playbook-init to set it up.",
   "author": {
     "name": "Arockiaraj Rayappan",
@@ -40,7 +40,7 @@
       "type": "boolean",
       "title": "Enforce standards",
       "description": "Block Write/Edit in a repo that has no dev-playbook project, instead of only warning. /dev-playbook-init turns this on for you (via a marker) - this option forces it on regardless.",
-      "default": false
+      "default": true
     }
   }
 }
