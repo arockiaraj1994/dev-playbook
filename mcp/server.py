@@ -109,7 +109,7 @@ logging.basicConfig(
 logger = logging.getLogger("dev-playbook")
 
 SERVER_LABEL = os.getenv("MCP_SERVER_LABEL", "dev-playbook")
-SERVER_VERSION = "2.0.0"
+SERVER_VERSION = "2.1.0"
 DEFAULT_PORT = 8420
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_INACTIVE_DAYS = 2

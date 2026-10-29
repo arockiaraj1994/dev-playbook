@@ -8,6 +8,33 @@ changes after 1.0.0 will bump the **major**.
 
 ## [Unreleased]
 
+### Fixed - plugin v0.4.1 / MCP server v2.1.0 - hooks recognise configured repos
+
+The plugin hooks named the repo from the session's working directory and looked
+it up in a local DB or marker file. Against a Docker server, every edit was
+reported as "no standards project" - even in repos that have one - and no
+definition of done was ever injected. (Redmine #635)
+
+- **Repo from the edited file's git root** - the edit gate checks the repo the
+  file belongs to, not the session cwd (`~/projects`, a `src/` subfolder, a
+  Codex thread folder). A file outside any repo is not checked. A `.git` at `/`,
+  `$HOME` or the temp dir is ignored. SessionStart stays quiet in a folder that
+  holds several repos.
+- **Server lookup** - new read-only `GET /api/projects/{name}` (bearer auth, like
+  `/sse`) returns whether the project exists, its guardrails and its definition
+  of done. The hooks ask it first (`server_url` / `token`, or
+  `PLAYBOOK_SERVER_URL`), and fall back to the local DB and markers when it
+  cannot be reached.
+- **Name matching ignores case and `-`/`_`/`.`** - in the hooks and in every MCP
+  tool, so `mytrip` resolves to `my-trip`; an ambiguous match resolves to nothing.
+- **Once per project** - the definition of done is injected once per session
+  per project, so a session editing two repos gets both.
+- **Migration of pre-v2 projects** - on startup, `core/guardrails.md`,
+  `core/git.md`, `core/glossary.md` and `core/definition-of-done.md` move to
+  their v2 paths (never over an existing v2 document), and path mentions inside
+  documents are rewritten. Without it a v1.1 database served no guardrails or
+  definition of done under v2.
+
 ### Changed - dev-playbook plugin v0.4.0 - enforce standards by default
 
 `enforce_standards` now defaults to `true` instead of `false`. A fresh install
