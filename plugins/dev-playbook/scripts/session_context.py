@@ -4,8 +4,10 @@ The MCP tools can fetch the guardrails, but only if the model thinks to ask.
 Guardrails that arrive after the first edit are guardrails that did not work,
 so they go in at session start whether anyone asked or not.
 
-Reads the standards DB directly with stdlib sqlite3: no MCP round-trip, no
-dependency on a running server, nothing to time out.
+Asks the server (one short GET) for the repo's guardrails, and falls back to a
+local standards DB with stdlib sqlite3 when the server cannot be reached. The
+repo is the cwd's git root; a workspace folder holding several repos gets no
+notice, because there is no single project to name.
 
 Contract: JSON hook payload on stdin, JSON on stdout, exit 0. Any failure at
 all exits 0 with no output - a hook must never be the reason someone's session
@@ -61,27 +63,39 @@ def _configured_note(project: str) -> str:
 
 def build_context(payload: dict) -> str | None:
     cwd = str(payload.get("cwd") or "")
-    name = cwd.rsplit("/", 1)[-1] if cwd else "this directory"
+    repo = playbook_db.repo_for_session(cwd)
+    if repo is None:
+        # A workspace of several repos (or no cwd): there is no one project to
+        # name yet. The edit gate decides per file once editing starts.
+        return None
+    name = repo.name or "this directory"
 
-    conn = playbook_db.connect()
-    project = None
-    body = None
-    if conn is not None:
-        try:
-            project = playbook_db.project_for_cwd(conn, cwd)
-            body = playbook_db.read_doc(conn, project, GUARDRAILS_PATH) if project else None
-        finally:
-            conn.close()
+    answer = playbook_db.server_lookup(name)
+    if answer is not None:
+        if not answer["exists"]:
+            return _no_project_notice(name)
+        project = answer["project"]
+        body = answer.get("guardrails")
+    else:
+        conn = playbook_db.connect()
+        project = None
+        body = None
+        if conn is not None:
+            try:
+                project = playbook_db.project_for_name(conn, name)
+                body = playbook_db.read_doc(conn, project, GUARDRAILS_PATH) if project else None
+            finally:
+                conn.close()
 
-    if project is None:
-        # No local DB project. A per-repo marker from /dev-playbook-init means it
-        # is configured against a server whose DB we cannot read (Docker) - point
-        # at the tools. With no DB and no marker, stay quiet.
-        if playbook_db.is_configured_marked(cwd):
-            return _configured_note(name)
-        if conn is None:
-            return None
-        return _no_project_notice(name)
+        if project is None:
+            # No server answer and no local DB project. A per-repo marker from
+            # /dev-playbook-init means it is configured - point at the tools.
+            # With no DB and no marker, stay quiet.
+            if playbook_db.is_configured_marked(str(repo)):
+                return _configured_note(name)
+            if conn is None:
+                return None
+            return _no_project_notice(name)
 
     if not body:
         return (

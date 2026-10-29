@@ -95,9 +95,19 @@ def _run(
 ) -> tuple[int, dict | None, str]:
     env = dict(os.environ)
     # Never let the developer's own machine leak into a hook test.
-    for key in ("PLAYBOOK_DB_PATH", "CLAUDE_PLUGIN_DATA", "MCP_DB_PATH", "CLAUDE_PLUGIN_ROOT"):
+    for key in (
+        "PLAYBOOK_DB_PATH",
+        "CLAUDE_PLUGIN_DATA",
+        "MCP_DB_PATH",
+        "CLAUDE_PLUGIN_ROOT",
+        "CLAUDE_PLUGIN_OPTION_ENFORCE_STANDARDS",
+        "CLAUDE_PLUGIN_OPTION_SERVER_URL",
+        "CLAUDE_PLUGIN_OPTION_TOKEN",
+    ):
         env.pop(key, None)
-    env.pop("CLAUDE_PLUGIN_OPTION_ENFORCE_STANDARDS", None)
+    # Nor a real server on localhost: server lookups are off unless a test
+    # points them at its own fake server.
+    env["PLAYBOOK_SERVER_URL"] = "off"
     env.update(env_extra or {})
     proc = subprocess.run(
         [sys.executable, str(script)],
@@ -424,6 +434,235 @@ def test_an_explicit_db_path_overrides_discovery(tmp_path, workspace):
     )
     assert code == 0
     assert "Never commit secrets." in out["hookSpecificOutput"]["additionalContext"]
+
+
+# ---------------------------------------------------------------------------
+# Which repo - the edited file's git root, not the session's cwd (#635)
+# ---------------------------------------------------------------------------
+
+
+def _git_repo(path: Path) -> Path:
+    (path / ".git").mkdir(parents=True)
+    return path
+
+
+def _edit_file_payload(cwd: str, file_path: str, session_id: str = "sess-1") -> dict:
+    payload = _edit_payload(cwd, session_id)
+    payload["tool_input"] = {"file_path": file_path, "content": "x = 1\n"}
+    return payload
+
+
+def test_edit_gate_names_the_repo_of_the_edited_file_not_the_workspace_cwd(tmp_path, workspace):
+    """A session started in ~/projects editing ~/projects/billing-api."""
+    projects = tmp_path / "projects"
+    repo = _git_repo(projects / "billing-api")
+    payload = _edit_file_payload(str(projects), str(repo / "src" / "main.py"))
+    out = _run(EDIT_GATE, payload, workspace["env"])[1]
+    context = out["hookSpecificOutput"]["additionalContext"]
+    assert "The changelog has an entry." in context
+    assert "'projects'" not in context
+
+
+def test_edit_gate_uses_the_git_root_from_a_subfolder_cwd(tmp_path, workspace):
+    repo = _git_repo(tmp_path / "nested" / "billing-api")
+    sub = repo / "src"
+    sub.mkdir()
+    out = _run(EDIT_GATE, _edit_file_payload(str(sub), str(sub / "main.py")), workspace["env"])[1]
+    assert "The changelog has an entry." in out["hookSpecificOutput"]["additionalContext"]
+
+
+def test_edit_gate_ignores_a_file_outside_any_repo_even_when_enforcing(tmp_path, workspace):
+    """A memory note or /tmp scratch file is not repo code: no notice, no deny."""
+    projects = tmp_path / "projects"
+    projects.mkdir()
+    note = tmp_path / "home" / ".claude" / "memory" / "note.md"
+    env = {**workspace["env"], "CLAUDE_PLUGIN_OPTION_ENFORCE_STANDARDS": "true"}
+    code, out, _ = _run(EDIT_GATE, _edit_file_payload(str(projects), str(note)), env)
+    assert code == 0
+    assert out is None
+
+
+def test_a_dotfiles_repo_at_home_does_not_claim_every_edit(tmp_path, workspace):
+    """~/.git (a dotfiles repo) must not make a memory note look like repo code."""
+    home = _git_repo(tmp_path / "dotfiles-home")
+    projects = home / "projects"
+    projects.mkdir()
+    note = home / ".claude" / "memory" / "note.md"
+    env = {**workspace["env"], "HOME": str(home), "CLAUDE_PLUGIN_OPTION_ENFORCE_STANDARDS": "true"}
+    code, out, _ = _run(EDIT_GATE, _edit_file_payload(str(projects), str(note)), env)
+    assert code == 0
+    assert out is None
+
+
+@pytest.mark.parametrize("dirname", ["billing_api", "BillingAPI", "billing.api"])
+def test_edit_gate_matches_the_project_ignoring_separators(tmp_path, workspace, dirname):
+    repo = _git_repo(tmp_path / "sep" / dirname)
+    out = _run(EDIT_GATE, _edit_file_payload(str(repo), str(repo / "a.py")), workspace["env"])[1]
+    assert "The changelog has an entry." in out["hookSpecificOutput"]["additionalContext"]
+
+
+def test_edit_gate_speaks_once_per_project_not_once_per_session(tmp_path):
+    """One session editing two configured repos gets both definitions of done."""
+    data = tmp_path / "plugin-data"
+    home = tmp_path / "home"
+    home.mkdir()
+    db = data / "playbook.db"
+    _make_db(db, "alpha", {"gates/definition-of-done.md": "# DoD\n\n- alpha rule\n"})
+    conn = sqlite3.connect(db)
+    conn.execute("INSERT INTO standards_projects (name, updated_at) VALUES ('beta', 0)")
+    conn.execute(
+        "INSERT INTO standards_files (project, relative_path, kind, title, body, updated_at)"
+        " VALUES ('beta', 'gates/definition-of-done.md', 'markdown', 'd', '# DoD\n\n- beta rule\n', 0)"
+    )
+    conn.commit()
+    conn.close()
+    projects = tmp_path / "projects"
+    alpha = _git_repo(projects / "alpha")
+    beta = _git_repo(projects / "beta")
+    env = {"CLAUDE_PLUGIN_DATA": str(data), "HOME": str(home)}
+    first = _run(EDIT_GATE, _edit_file_payload(str(projects), str(alpha / "a.py")), env)[1]
+    second = _run(EDIT_GATE, _edit_file_payload(str(projects), str(beta / "b.py")), env)[1]
+    again = _run(EDIT_GATE, _edit_file_payload(str(projects), str(alpha / "c.py")), env)[1]
+    assert "alpha rule" in first["hookSpecificOutput"]["additionalContext"]
+    assert "beta rule" in second["hookSpecificOutput"]["additionalContext"]
+    assert again is None
+
+
+def test_session_start_is_silent_in_a_workspace_of_repos(tmp_path, workspace):
+    projects = tmp_path / "projects"
+    _git_repo(projects / "billing-api")
+    _git_repo(projects / "other")
+    code, out, _ = _run(SESSION_CONTEXT, _session_payload(str(projects)), workspace["env"])
+    assert code == 0
+    assert out is None
+
+
+def test_session_start_uses_the_git_root_from_a_subfolder(tmp_path, workspace):
+    repo = _git_repo(tmp_path / "deep" / "billing-api")
+    sub = repo / "deploy"
+    sub.mkdir()
+    out = _run(SESSION_CONTEXT, _session_payload(str(sub)), workspace["env"])[1]
+    assert "Never commit secrets." in out["hookSpecificOutput"]["additionalContext"]
+
+
+# ---------------------------------------------------------------------------
+# Asking the server - GET /api/projects/{name} (#635)
+# ---------------------------------------------------------------------------
+
+
+class _FakeServer:
+    """A stand-in for the dev-playbook server's lookup endpoint."""
+
+    def __init__(self, projects: dict[str, dict]) -> None:
+        import http.server
+        import threading
+
+        self.projects = projects
+        self.requests: list[tuple[str, str | None]] = []
+        outer = self
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self) -> None:  # noqa: N802 - http.server API
+                outer.requests.append((self.path, self.headers.get("Authorization")))
+                name = self.path.rsplit("/", 1)[-1]
+                found = outer.projects.get(name)
+                body = {"exists": True, **found} if found else {"exists": False, "project": None}
+                raw = json.dumps(body).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(raw)))
+                self.end_headers()
+                self.wfile.write(raw)
+
+            def log_message(self, *_args: object) -> None:
+                pass
+
+        self._httpd = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+        self.url = f"http://127.0.0.1:{self._httpd.server_address[1]}"
+        self._thread = threading.Thread(target=self._httpd.serve_forever, daemon=True)
+        self._thread.start()
+
+    def close(self) -> None:
+        self._httpd.shutdown()
+        self._httpd.server_close()
+
+
+@pytest.fixture
+def fake_server():
+    server = _FakeServer(
+        {
+            "mytrip": {
+                "project": "my-trip",
+                "guardrails": "# Guardrails\n\n- Server guardrail rule.\n",
+                "definition_of_done": "---\ntitle: DoD\n---\n\n# DoD\n\n- Server DoD rule.\n",
+            }
+        }
+    )
+    yield server
+    server.close()
+
+
+def _no_db_env(tmp_path: Path, server_url: str, **extra: str) -> dict:
+    home = tmp_path / "home"
+    home.mkdir(exist_ok=True)
+    return {
+        "CLAUDE_PLUGIN_DATA": str(tmp_path / "empty-data"),
+        "HOME": str(home),
+        "PLAYBOOK_SERVER_URL": server_url,
+        **extra,
+    }
+
+
+def test_edit_gate_takes_the_definition_of_done_from_the_server(tmp_path, fake_server):
+    """No local DB at all (Docker server): the server's answer is used."""
+    repo = _git_repo(tmp_path / "projects" / "mytrip")
+    env = _no_db_env(
+        tmp_path, f"{fake_server.url}/sse", CLAUDE_PLUGIN_OPTION_ENFORCE_STANDARDS="true"
+    )
+    payload = _edit_file_payload(str(tmp_path / "projects"), str(repo / "app.kt"))
+    out = _run(EDIT_GATE, payload, env)[1]
+    spec = out["hookSpecificOutput"]
+    assert "permissionDecision" not in spec
+    assert "Server DoD rule." in spec["additionalContext"]
+    assert "'my-trip'" in spec["additionalContext"]
+    assert "title: DoD" not in spec["additionalContext"]
+    assert fake_server.requests[0][0] == "/api/projects/mytrip"
+
+
+def test_session_start_takes_the_guardrails_from_the_server(tmp_path, fake_server):
+    repo = _git_repo(tmp_path / "mytrip")
+    out = _run(SESSION_CONTEXT, _session_payload(str(repo)), _no_db_env(tmp_path, fake_server.url))[
+        1
+    ]
+    assert "Server guardrail rule." in out["hookSpecificOutput"]["additionalContext"]
+
+
+def test_the_server_saying_no_project_wins_over_a_stale_marker(tmp_path, fake_server):
+    data = tmp_path / "empty-data"
+    (data / "configured").mkdir(parents=True)
+    (data / "configured" / "gone").write_text("configured\n")
+    repo = _git_repo(tmp_path / "gone")
+    env = _no_db_env(tmp_path, fake_server.url, CLAUDE_PLUGIN_OPTION_ENFORCE_STANDARDS="true")
+    out = _run(EDIT_GATE, _edit_file_payload(str(repo), str(repo / "x.py")), env)[1]
+    assert out["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+
+def test_the_plugin_token_is_sent_as_a_bearer_header(tmp_path, fake_server):
+    repo = _git_repo(tmp_path / "mytrip")
+    env = _no_db_env(tmp_path, fake_server.url, CLAUDE_PLUGIN_OPTION_TOKEN="tok-123")
+    _run(EDIT_GATE, _edit_file_payload(str(repo), str(repo / "x.py")), env)
+    assert fake_server.requests[0][1] == "Bearer tok-123"
+
+
+def test_an_unreachable_server_falls_back_to_the_local_db(tmp_path, workspace):
+    import socket
+
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        dead = f"http://127.0.0.1:{s.getsockname()[1]}"
+    env = {**workspace["env"], "PLAYBOOK_SERVER_URL": dead}
+    out = _run(EDIT_GATE, _edit_payload(workspace["repo"]), env)[1]
+    assert "The changelog has an entry." in out["hookSpecificOutput"]["additionalContext"]
 
 
 # ---------------------------------------------------------------------------

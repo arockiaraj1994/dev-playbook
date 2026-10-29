@@ -1,17 +1,23 @@
-"""Shared read-only access to the dev-playbook standards DB, for the hooks.
+"""Shared read-only access to the dev-playbook standards, for the hooks.
 
 Stdlib only, and deliberately so. Hooks run on every session start and every
-edit; making them depend on the MCP server being up, or on uv resolving an
-environment, would mean a hook that fails exactly when the server is down. The
-standards are rows in SQLite, so the hooks read the rows.
+edit, so they must not depend on uv resolving an environment. They ask the
+server first (one GET with a short timeout - the only source that knows a
+Dockerised server's projects), and fall back to reading a local standards DB
+and init's markers, so a server that is down never breaks a session.
 
 Read-only in every sense: opened with mode=ro, no writes, no migrations.
 """
 
 from __future__ import annotations
 
+import json
 import os
 import sqlite3
+import tempfile
+import urllib.error
+import urllib.parse
+import urllib.request
 from pathlib import Path
 
 PLUGIN_NAME = "dev-playbook"
@@ -84,27 +90,181 @@ def connect() -> sqlite3.Connection | None:
     return None
 
 
-def project_for_cwd(conn: sqlite3.Connection, cwd: str) -> str | None:
-    """The standards project for a workspace, matched on directory basename.
+def _fold(name: str) -> str:
+    return "".join(c for c in name.lower() if c not in "-_. ")
 
-    The same rule the tools use, so the hook and the model never disagree about
-    which project this repo is: basename, case-insensitive, no substitutes.
-    """
-    name = Path(cwd).name if cwd else ""
-    if not name:
+
+def match_name(names: list[str], wanted: str) -> str | None:
+    """The same matching the server's tools use (tools.common.match_project_name),
+    so the hook and the model never disagree about which project a repo is:
+    exact, then case-insensitive, then separator-insensitive, never a guess
+    between two candidates."""
+    if not wanted:
         return None
+    if wanted in names:
+        return wanted
+    lowered = wanted.lower()
+    for candidate in names:
+        if candidate.lower() == lowered:
+            return candidate
+    folded = _fold(wanted)
+    matches = [n for n in names if folded and _fold(n) == folded]
+    return matches[0] if len(matches) == 1 else None
+
+
+def project_for_name(conn: sqlite3.Connection, name: str) -> str | None:
+    """The standards project in a local DB that a repo name refers to."""
     try:
         rows = conn.execute("SELECT name FROM standards_projects").fetchall()
     except sqlite3.Error:
         return None
-    names = [r[0] for r in rows]
-    if name in names:
-        return name
-    lowered = name.lower()
-    for candidate in names:
-        if candidate.lower() == lowered:
-            return candidate
+    return match_name([r[0] for r in rows], name)
+
+
+# ---------------------------------------------------------------------------
+# Which repo is this?
+#
+# A session's cwd is often not the repo being edited: sessions start in a
+# workspace folder (~/projects) or a subfolder (src/), and Codex starts in its
+# own per-thread folder. The file being edited is the better witness.
+# ---------------------------------------------------------------------------
+
+
+def _not_a_repo_root() -> set[Path]:
+    """Directories whose `.git` says nothing about the file being edited.
+
+    A dotfiles repo at ~, or a stray /tmp/.git, would otherwise claim every
+    edit beneath it, memory notes and scratch files included.
+    """
+    roots = {Path("/"), Path(tempfile.gettempdir())}
+    try:
+        roots.add(Path.home())
+    except RuntimeError:
+        pass
+    return {r.resolve() for r in roots}
+
+
+def git_root(path: Path) -> Path | None:
+    """The nearest enclosing directory holding `.git` (a dir, or a worktree file)."""
+    try:
+        current = path if path.is_dir() else path.parent
+        skip = _not_a_repo_root()
+        for candidate in (current, *current.parents):
+            if candidate.resolve() in skip:
+                continue
+            if (candidate / ".git").exists():
+                return candidate
+    except OSError:
+        return None
     return None
+
+
+def _is_within(path: Path, parent: Path) -> bool:
+    try:
+        path.relative_to(parent)
+    except ValueError:
+        return False
+    return True
+
+
+def repo_for_edit(file_path: str, cwd: str) -> Path | None:
+    """The repo an edit lands in, or None when the file is not repo code.
+
+    1. The file's git root.
+    2. Else the cwd, when the file is under it (a repo without git yet).
+    3. Else None: a memory note, a /tmp scratch file - nothing to check.
+    """
+    cwd_path = Path(cwd).expanduser() if cwd else None
+    if not file_path:
+        return cwd_path
+    target = Path(file_path).expanduser()
+    if not target.is_absolute() and cwd_path is not None:
+        target = cwd_path / target
+    root = git_root(target)
+    if root is not None:
+        return root
+    if cwd_path is not None and _is_within(target, cwd_path):
+        return cwd_path
+    return None
+
+
+def repo_for_session(cwd: str) -> Path | None:
+    """The repo a session starts in, or None for a workspace of several repos.
+
+    A cwd inside a git repo is that repo. A cwd that is not, but has repos
+    directly below it, is a workspace: naming it would be the "no project
+    named 'projects'" false alarm, so the edit gate decides per file instead.
+    """
+    if not cwd:
+        return None
+    path = Path(cwd).expanduser()
+    root = git_root(path)
+    if root is not None:
+        return root
+    try:
+        if any((child / ".git").exists() for child in path.iterdir() if child.is_dir()):
+            return None
+    except OSError:
+        return None
+    return path
+
+
+# ---------------------------------------------------------------------------
+# The server
+#
+# Against a Dockerised server the DB is in the container, so the hooks ask the
+# server itself (GET /api/projects/{name}). Short timeout, and any failure
+# reads as "no answer" so the caller falls back to the local DB and markers.
+# ---------------------------------------------------------------------------
+
+SERVER_URL_ENV = "PLAYBOOK_SERVER_URL"
+# The plugin's userConfig, as Claude Code exports it to hook processes.
+PLUGIN_SERVER_URL_ENV = "CLAUDE_PLUGIN_OPTION_SERVER_URL"
+PLUGIN_TOKEN_ENV = "CLAUDE_PLUGIN_OPTION_TOKEN"
+DEFAULT_SERVER_URL = "http://localhost:8420"
+SERVER_TIMEOUT_S = 2.0
+
+
+def server_base_url() -> str | None:
+    """The server's base URL, or None when lookups are switched off ("off")."""
+    raw = (
+        os.environ.get(SERVER_URL_ENV, "").strip()
+        or os.environ.get(PLUGIN_SERVER_URL_ENV, "").strip()
+    )
+    if raw.lower() == "off":
+        return None
+    url = (raw or DEFAULT_SERVER_URL).rstrip("/")
+    return url.removesuffix("/sse")
+
+
+def server_lookup(name: str) -> dict | None:
+    """The server's answer for a repo name, or None if it could not be asked.
+
+    The answer is {"exists": bool, "project", "guardrails", "definition_of_done"}.
+    """
+    base = server_base_url()
+    if base is None or not name:
+        return None
+    if not base.startswith(("http://", "https://")):
+        return None
+    url = f"{base}/api/projects/{urllib.parse.quote(name, safe='')}"
+    request = urllib.request.Request(url, headers={"Accept": "application/json"})
+    token = os.environ.get(PLUGIN_TOKEN_ENV, "").strip()
+    if token:
+        request.add_header("Authorization", f"Bearer {token}")
+    try:
+        with urllib.request.urlopen(request, timeout=SERVER_TIMEOUT_S) as response:  # noqa: S310 - scheme checked above
+            data = json.loads(response.read().decode("utf-8"))
+    except (OSError, ValueError, urllib.error.URLError):
+        return None
+    if not isinstance(data, dict) or not isinstance(data.get("exists"), bool):
+        return None
+    if data["exists"] and not isinstance(data.get("project"), str):
+        return None
+    for key in ("guardrails", "definition_of_done"):
+        if not isinstance(data.get(key), (str, type(None))):
+            data[key] = None
+    return data
 
 
 def read_doc(conn: sqlite3.Connection, project: str, relative_path: str) -> str | None:
