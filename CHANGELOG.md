@@ -8,6 +8,11 @@ changes after 1.0.0 will bump the **major**.
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-10-30
+
+First tagged release since 0.3.0. It collects every change below, including
+the untagged 0.4 to 2.0 server versions and plugin versions 0.2.0 to 0.4.1.
+
 ### Fixed - plugin v0.4.1 / MCP server v2.1.0 - hooks recognise configured repos
 
 The plugin hooks named the repo from the session's working directory and looked
