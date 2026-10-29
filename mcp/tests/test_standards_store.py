@@ -308,3 +308,85 @@ async def test_dump_to_dir_writes_files(store: StandardsStore, tmp_path: Path):
     assert "title: A" in md_content
     assert "Body text." in md_content
     assert (target / "p" / "gates" / "scripts" / "check.sh").read_text() == "#!/bin/bash"
+
+
+# ---------------------------------------------------------------------------
+# Migration: pre-v2 core/ layout -> v2 paths (#635)
+# ---------------------------------------------------------------------------
+
+
+async def _seed_core_layout(store: StandardsStore, project: str) -> None:
+    for rel, body in (
+        ("core/guardrails.md", "Rules. See `core/definition-of-done.md` before done."),
+        ("core/definition-of-done.md", "Checklist."),
+        ("core/git.md", "Git."),
+        ("core/glossary.md", "Words."),
+        ("workflows/bug-fix.md", "Re-read `core/guardrails.md` first."),
+    ):
+        await store.upsert_file(
+            project=project,
+            relative_path=rel,
+            kind="markdown",
+            title=rel,
+            description="",
+            frontmatter="see_also: [core/git.md]" if rel == "workflows/bug-fix.md" else "",
+            body=body,
+            expected_version=None,
+        )
+
+
+async def test_init_moves_core_documents_to_their_v2_paths(tmp_path: Path):
+    store = StandardsStore(tmp_path / "standards.db")
+    await store.init()
+    await _seed_core_layout(store, "old")
+
+    await StandardsStore(tmp_path / "standards.db").init()
+
+    paths = {f.relative_path for f in await store.list_files("old")}
+    assert paths == {
+        "guardrails.md",
+        "gates/definition-of-done.md",
+        "git.md",
+        "glossary.md",
+        "workflows/bug-fix.md",
+    }
+    guardrails = await store.get_file("old", "guardrails.md")
+    assert guardrails is not None
+    assert "`gates/definition-of-done.md`" in guardrails.body
+    bug_fix = await store.get_file("old", "workflows/bug-fix.md")
+    assert bug_fix is not None
+    assert "core/" not in bug_fix.body
+    assert bug_fix.frontmatter == "see_also: [git.md]"
+
+
+async def test_the_core_migration_never_overwrites_an_existing_v2_document(tmp_path: Path):
+    store = StandardsStore(tmp_path / "standards.db")
+    await store.init()
+    await _seed_core_layout(store, "both")
+    await store.upsert_file(
+        project="both",
+        relative_path="guardrails.md",
+        kind="markdown",
+        title="v2",
+        description="",
+        frontmatter="",
+        body="The v2 guardrails.",
+        expected_version=None,
+    )
+
+    await StandardsStore(tmp_path / "standards.db").init()
+
+    kept = await store.get_file("both", "guardrails.md")
+    assert kept is not None and kept.body == "The v2 guardrails."
+    assert await store.get_file("both", "core/guardrails.md") is not None
+
+
+async def test_the_core_migration_is_idempotent(tmp_path: Path):
+    store = StandardsStore(tmp_path / "standards.db")
+    await store.init()
+    await _seed_core_layout(store, "twice")
+    await StandardsStore(tmp_path / "standards.db").init()
+    first = {f.relative_path: f.body for f in await store.list_files("twice")}
+    await StandardsStore(tmp_path / "standards.db").init()
+    second = {f.relative_path: f.body for f in await store.list_files("twice")}
+    assert first == second

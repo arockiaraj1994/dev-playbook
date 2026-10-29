@@ -152,18 +152,39 @@ def as_str_map(value: object) -> dict[str, str]:
 # ---------------------------------------------------------------------------
 
 
-async def resolve_project(store: StandardsStore, project: str) -> str | None:
-    """Return the stored project name, matched case-insensitively, or None."""
-    if not project:
+def normalize_project_name(name: str) -> str:
+    """Fold case and drop separators, so `my-trip`, `mytrip` and `My_Trip` agree.
+
+    Repo directories and project names drift apart in exactly these ways, and a
+    lookup that misses on a dash reads to the agent as "no standards here".
+    """
+    return "".join(c for c in name.lower() if c not in "-_. ")
+
+
+def match_project_name(names: list[str], wanted: str) -> str | None:
+    """The stored name `wanted` refers to: exact, then case-insensitive, then
+    separator-insensitive. A separator-insensitive match that is ambiguous
+    returns None rather than guessing between two projects."""
+    if not wanted:
         return None
-    names = await store.list_projects()
-    if project in names:
-        return project
-    lowered = project.lower()
+    if wanted in names:
+        return wanted
+    lowered = wanted.lower()
     for name in names:
         if name.lower() == lowered:
             return name
-    return None
+    folded = normalize_project_name(wanted)
+    if not folded:
+        return None
+    matches = [name for name in names if normalize_project_name(name) == folded]
+    return matches[0] if len(matches) == 1 else None
+
+
+async def resolve_project(store: StandardsStore, project: str) -> str | None:
+    """Return the stored project name `project` refers to, or None."""
+    if not project:
+        return None
+    return match_project_name(await store.list_projects(), project)
 
 
 async def unknown_project(store: StandardsStore, project: str) -> str:
@@ -274,7 +295,9 @@ __all__ = [
     "as_str_map",
     "as_str_set",
     "error",
+    "match_project_name",
     "next_calls",
+    "normalize_project_name",
     "render_ref",
     "route_call",
     "WritePolicy",

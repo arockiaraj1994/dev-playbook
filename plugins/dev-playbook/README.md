@@ -41,9 +41,16 @@ local server with auth off.
 | **SessionStart hook** | Puts this project's guardrails in context at session start, without anyone having to ask. |
 | **PreToolUse hook** (`Write`/`Edit`) | The definition of done before an edit; blocks edits in a repo that has not been configured (when enforcing). |
 
-The hooks read state with stdlib only - the local standards DB when there is one,
-and the marker files `/dev-playbook-init` drops when the server is remote (Docker).
-Any failure exits silently: a hook must never be the reason a session is broken.
+The hooks use stdlib only. They work out the repo from the edited file's git root
+(not the session's cwd), so a session started in a folder of several repos checks
+each edit against the right project, and a file outside any repo (a memory note,
+a scratch file) is not checked at all. They ask the server first -
+`GET /api/projects/{name}` on `server_url`, with `token` as the bearer - and fall
+back to a local standards DB and the marker files `/dev-playbook-init` drops when
+the server cannot be reached. Project names match ignoring case and `-`/`_`/`.`,
+so `mytrip` finds `my-trip`. Set `PLAYBOOK_SERVER_URL` to override the URL, or to
+`off` to skip the server. Any failure exits silently: a hook must never be the
+reason a session is broken.
 
 ## Connecting
 

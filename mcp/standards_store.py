@@ -152,6 +152,51 @@ def _connect(path: Path):
         conn.close()
 
 
+# v2.0.0 removed the core/ directory. Projects scaffolded before that still
+# store these paths, and the v2 tools and hooks only read the new ones, so a
+# pre-v2 DB would serve no guardrails or definition of done until moved.
+_CORE_LAYOUT_MOVES = (
+    ("core/definition-of-done.md", "gates/definition-of-done.md"),
+    ("core/guardrails.md", "guardrails.md"),
+    ("core/git.md", "git.md"),
+    ("core/glossary.md", "glossary.md"),
+)
+
+
+def _migrate_core_layout(conn: sqlite3.Connection) -> None:
+    """Move pre-v2 core/ documents to their v2 paths, in place and idempotently.
+
+    A row moves only when its project has no document at the target path yet,
+    so a project that already has both is left for a person to reconcile rather
+    than overwritten. Path mentions inside the documents are rewritten too, so
+    the prose does not point at files that no longer exist.
+    """
+    for old, new in _CORE_LAYOUT_MOVES:
+        moved = conn.execute(
+            """
+            UPDATE standards_files SET relative_path = ?
+            WHERE relative_path = ?
+              AND NOT EXISTS (
+                SELECT 1 FROM standards_files AS t
+                WHERE t.project = standards_files.project AND t.relative_path = ?
+              )
+            """,
+            (new, old, new),
+        ).rowcount
+        if moved:
+            logger.info("Migrated %d document(s) from %s to %s", moved, old, new)
+    for old, new in _CORE_LAYOUT_MOVES:
+        pattern = f"%{old}%"
+        conn.execute(
+            """
+            UPDATE standards_files
+            SET body = REPLACE(body, ?, ?), frontmatter = REPLACE(frontmatter, ?, ?)
+            WHERE body LIKE ? OR frontmatter LIKE ?
+            """,
+            (old, new, old, new, pattern, pattern),
+        )
+
+
 def _row_to_file(r: sqlite3.Row) -> FileRow:
     return FileRow(
         project=r["project"],
@@ -204,6 +249,7 @@ class StandardsStore:
                 for column in columns:
                     if column not in existing:
                         conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} TEXT")
+            _migrate_core_layout(conn)
 
     # -- readers ----------------------------------------------------------------
 
