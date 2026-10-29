@@ -355,12 +355,16 @@ def _initialization_options() -> InitializationOptions:
 # ---------------------------------------------------------------------------
 # AppAuthMiddleware - single path-aware middleware
 #
-# MCP paths  (/sse, /messages/)    → identity.resolve_bearer_token (Bearer)
+# MCP paths  (/sse, /messages/, /api/) → identity.resolve_bearer_token (Bearer)
 # Dashboard  (/dashboard/*, /login, /logout) → session.resolve_cookie (Cookie)
 # Public     (/auth/login, /auth/token, /healthz) → anonymous principal
 # ---------------------------------------------------------------------------
 
-_MCP_PATH_PREFIXES = ("/sse", "/messages/")
+_MCP_PATH_PREFIXES = ("/sse", "/messages/", "/api/")
+# Same shape scaffold accepts for a project name.
+_PROJECT_NAME_RE = re.compile(r"[A-Za-z0-9._-]{1,64}")
+_GUARDRAILS_DOC = "guardrails.md"
+_DOD_DOC = "gates/definition-of-done.md"
 _DASHBOARD_PATH_PREFIXES = ("/dashboard",)
 # Login/logout are exact paths - `/dashboard` is the only prefix-matched route.
 _LOGIN_LOGOUT_PATHS = frozenset({"/login", "/logout"})
@@ -633,6 +637,32 @@ def build_app(deps: AppDeps) -> Starlette:
         )
         return JSONResponse(token_data)
 
+    # -- Hook lookup API -----------------------------------------------------
+    # The plugin hooks are stdlib scripts that cannot speak MCP, and against a
+    # Dockerised server they cannot read its DB either. This gives them the one
+    # answer they need - does this repo have standards, and what are the
+    # guardrails and definition of done - in a single cheap GET. Same bearer
+    # auth as /sse (see _MCP_PATH_PREFIXES).
+
+    async def project_lookup_endpoint(request: Request) -> Response:
+        """GET /api/projects/{name} - JSON, read-only."""
+        wanted = str(request.path_params.get("name", ""))
+        if not _PROJECT_NAME_RE.fullmatch(wanted):
+            return JSONResponse({"error": "invalid_project_name"}, status_code=400)
+        project = tools_common.match_project_name(await deps.standards.list_projects(), wanted)
+        if project is None:
+            return JSONResponse({"exists": False, "project": None})
+        guardrails = await deps.standards.get_file(project, _GUARDRAILS_DOC)
+        dod = await deps.standards.get_file(project, _DOD_DOC)
+        return JSONResponse(
+            {
+                "exists": True,
+                "project": project,
+                "guardrails": guardrails.body if guardrails else None,
+                "definition_of_done": dod.body if dod else None,
+            }
+        )
+
     # -- Browser login / logout routes ---------------------------------------
 
     login_get, login_post, logout_post = build_auth_routes(
@@ -689,6 +719,8 @@ def build_app(deps: AppDeps) -> Starlette:
         # MCP SSE transport
         Route("/sse", endpoint=sse_endpoint, methods=["GET"]),
         Mount("/messages/", app=sse.handle_post_message),
+        # Hook lookup (Bearer, like the MCP transport)
+        Route("/api/projects/{name}", endpoint=project_lookup_endpoint, methods=["GET"]),
         # Dashboard UI
         Mount(
             "/dashboard",
