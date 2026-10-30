@@ -171,7 +171,9 @@ def repo_for_edit(file_path: str, cwd: str) -> Path | None:
     """The repo an edit lands in, or None when the file is not repo code.
 
     1. The file's git root.
-    2. Else the cwd, when the file is under it (a repo without git yet).
+    2. Else, when the file is under the cwd: the cwd itself (a repo without
+       git yet), or - when the cwd is a workspace of repos - the top-level
+       folder under it that holds the file (~/projects/trade-diary).
     3. Else None: a memory note, a /tmp scratch file - nothing to check.
     """
     cwd_path = Path(cwd).expanduser() if cwd else None
@@ -183,9 +185,15 @@ def repo_for_edit(file_path: str, cwd: str) -> Path | None:
     root = git_root(target)
     if root is not None:
         return root
-    if cwd_path is not None and _is_within(target, cwd_path):
+    if cwd_path is None or not _is_within(target, cwd_path):
+        return None
+    if not _is_workspace(cwd_path):
         return cwd_path
-    return None
+    parts = target.relative_to(cwd_path).parts
+    if len(parts) < 2:
+        # A loose file in the workspace folder itself belongs to no repo.
+        return None
+    return cwd_path / parts[0]
 
 
 def repo_for_session(cwd: str) -> Path | None:
@@ -201,12 +209,19 @@ def repo_for_session(cwd: str) -> Path | None:
     root = git_root(path)
     if root is not None:
         return root
-    try:
-        if any((child / ".git").exists() for child in path.iterdir() if child.is_dir()):
-            return None
-    except OSError:
+    if _is_workspace(path):
         return None
     return path
+
+
+def _is_workspace(path: Path) -> bool:
+    """A folder that is not itself in a repo but holds repos directly below it."""
+    if git_root(path) is not None:
+        return False
+    try:
+        return any((child / ".git").exists() for child in path.iterdir() if child.is_dir())
+    except OSError:
+        return False
 
 
 # ---------------------------------------------------------------------------
