@@ -8,6 +8,14 @@ changes after 1.0.0 will bump the **major**.
 
 ## [Unreleased]
 
+### Fixed - plugin v0.4.2 - non-git folders in a workspace
+
+A session started in a folder of several repos (`~/projects`) that edited a
+folder without its own `.git` (`~/projects/trade-diary`) named the workspace
+(`'projects'`) instead of the folder. The hook now names the top-level folder
+under the workspace that holds the file, and a loose file in the workspace
+folder itself is not checked. The server is unchanged at 2.1.0. (Redmine #635)
+
 ## [2.1.0] - 2026-10-30
 
 First tagged release since 0.3.0. It collects every change below, including

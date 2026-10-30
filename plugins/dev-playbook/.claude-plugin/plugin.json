@@ -1,6 +1,6 @@
 {
   "name": "dev-playbook",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Your team's coding standards, in context. Connects to a dev-playbook server (run it locally with Docker) over MCP to serve guardrails, definition of done, per-language rules and task workflows - and scaffolds them for a repo that has none. Run /dev-playbook-init to set it up.",
   "author": {
     "name": "Arockiaraj Rayappan",

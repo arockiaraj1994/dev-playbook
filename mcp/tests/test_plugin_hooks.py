@@ -482,6 +482,42 @@ def test_edit_gate_ignores_a_file_outside_any_repo_even_when_enforcing(tmp_path,
     assert out is None
 
 
+def test_a_non_git_folder_in_a_workspace_is_named_by_its_folder(tmp_path, workspace):
+    """~/projects/billing-api without .git, next to repos that have it."""
+    projects = tmp_path / "projects"
+    _git_repo(projects / "some-repo")
+    folder = projects / "billing-api"
+    folder.mkdir()
+    payload = _edit_file_payload(str(projects), str(folder / "src" / "main.py"))
+    out = _run(EDIT_GATE, payload, workspace["env"])[1]
+    context = out["hookSpecificOutput"]["additionalContext"]
+    assert "The changelog has an entry." in context
+    assert "'projects'" not in context
+
+
+def test_an_unconfigured_non_git_folder_in_a_workspace_is_named_correctly(tmp_path, workspace):
+    projects = tmp_path / "projects"
+    _git_repo(projects / "some-repo")
+    folder = projects / "trade-diary"
+    folder.mkdir()
+    env = {**workspace["env"], "CLAUDE_PLUGIN_OPTION_ENFORCE_STANDARDS": "true"}
+    out = _run(EDIT_GATE, _edit_file_payload(str(projects), str(folder / "x.py")), env)[1]
+    reason = out["hookSpecificOutput"]["permissionDecisionReason"]
+    assert "'trade-diary'" in reason
+    assert "'projects'" not in reason
+
+
+def test_a_loose_file_in_a_workspace_folder_is_not_checked(tmp_path, workspace):
+    projects = tmp_path / "projects"
+    _git_repo(projects / "some-repo")
+    env = {**workspace["env"], "CLAUDE_PLUGIN_OPTION_ENFORCE_STANDARDS": "true"}
+    code, out, _ = _run(
+        EDIT_GATE, _edit_file_payload(str(projects), str(projects / "notes.md")), env
+    )
+    assert code == 0
+    assert out is None
+
+
 def test_a_dotfiles_repo_at_home_does_not_claim_every_edit(tmp_path, workspace):
     """~/.git (a dotfiles repo) must not make a memory note look like repo code."""
     home = _git_repo(tmp_path / "dotfiles-home")
