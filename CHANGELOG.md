@@ -6,7 +6,18 @@ The MCP server (under `mcp/`) follows [Semantic Versioning](https://semver.org/)
 Tool name or schema changes bump the **minor** version (until 1.0.0); breaking
 changes after 1.0.0 will bump the **major**.
 
-## [Unreleased]
+## [2.1.1] - 2026-11-11
+
+### Security - MCP server v2.1.1 - vulnerable dependencies
+
+Trivy reported 3 critical and 14 high findings in the 2.1.0 image, all in
+locked Python dependencies. Upgraded: PyJWT 2.12.1 -> 2.15.1 (authentication
+bypasses), mcp 1.27.0 -> 1.30.0 (HTTP transports did not verify the caller),
+starlette 1.0.0 -> 1.10.0, cryptography 46.0.7 -> 50.0.2, anyio 4.13.0 ->
+4.16.0, certifi 2026.2.25 -> 2026.10.23, python-multipart 0.0.26 -> 0.0.33,
+idna 3.11 -> 3.20 and pydantic-settings 2.13.1 -> 2.16.2. `mcp` now requires
+`>=1.28.1,<2`: 2.x is a breaking release and is not adopted here. pip-audit
+and Trivy report no fixable vulnerability. No code changes. (Redmine #683)
 
 ### Fixed - plugin v0.4.2 - non-git folders in a workspace
 
